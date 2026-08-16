@@ -1,0 +1,16 @@
+{
+  "name": "ruibude-registration-platform",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "机器人赛事报名、战队管理与审核平台",
+  "scripts": {
+    "dev": "node --watch server.mjs",
+    "start": "node server.mjs",
+    "test": "node --test",
+    "visual-check": "node scripts/visual-check.mjs"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

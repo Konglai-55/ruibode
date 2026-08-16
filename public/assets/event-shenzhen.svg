@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">深圳机器人城市挑战赛</title><desc id="desc">蓝色科技场景中的竞赛机器人插画</desc>
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0b1f3a"/><stop offset=".55" stop-color="#174f79"/><stop offset="1" stop-color="#18a083"/></linearGradient><pattern id="p" width="60" height="60" patternUnits="userSpaceOnUse"><path d="M0 30h20l10-10h30M30 60V40l10-10" fill="none" stroke="#fff" stroke-opacity=".1" stroke-width="2"/></pattern></defs>
+  <rect width="1200" height="675" fill="url(#g)"/><rect width="1200" height="675" fill="url(#p)"/>
+  <g transform="translate(760 180)" fill="none" stroke="#d8f5ff" stroke-width="18"><rect x="20" y="60" width="260" height="220" rx="34"/><circle cx="90" cy="310" r="52"/><circle cx="240" cy="310" r="52"/><path d="M85 60V10h130v50M95 130h35m60 0h35M105 205h110M280 120l80-55v170l-80-35"/></g>
+  <g fill="#fff"><text x="78" y="142" font-family="Arial,'Microsoft YaHei',sans-serif" font-size="38" font-weight="700" letter-spacing="4">瑞卜德教育</text><text x="78" y="238" font-family="Arial,'Microsoft YaHei',sans-serif" font-size="62" font-weight="800">青少年机器人</text><text x="78" y="318" font-family="Arial,'Microsoft YaHei',sans-serif" font-size="62" font-weight="800">城市挑战赛</text><rect x="78" y="372" width="335" height="62" rx="31" fill="#16a34a"/><text x="115" y="414" font-family="Arial,'Microsoft YaHei',sans-serif" font-size="28" font-weight="700">深圳站 · 2026</text></g>
+</svg>
