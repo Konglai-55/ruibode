@@ -270,15 +270,27 @@ await userPage.goto(`${base}/#/account/teams`, { waitUntil: 'networkidle' });
 await userPage.screenshot({ path: `${output}/desktop-teams.png`, fullPage: true });
 const desktopNavText = await userPage.locator('.desktop-nav').innerText();
 checks.push({ profile: 'user-teams', title: await userPage.locator('h1').first().textContent(), primaryLinksRemoved: !desktopNavText.includes('战队管理') && !desktopNavText.includes('我的比赛'), overflow: await userPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1), valid: !desktopNavText.includes('战队管理') && !desktopNavText.includes('我的比赛') });
-await userPage.goto(`${base}/#/team-number`, { waitUntil: 'networkidle' });
-await userPage.locator('.help-path').first().waitFor({ state: 'visible' });
-const helpPaths = await userPage.locator('.help-path').count();
-const officialHelpLink = userPage.locator('.help-path a[href*="41002213601559"]');
-const committeeContact = await userPage.locator('.committee-contact').innerText();
-const helpHeadings = await userPage.locator('.help-path h2').allTextContents();
-const committeeRegistrationCopy = await userPage.locator('.help-path').nth(2).locator('p').innerText();
+await userPage.goto(`${base}/#/account/teams/new`, { waitUntil: 'networkidle' });
+const teamNumberGuideLink = userPage.locator('.team-number-link').first();
+const teamNumberGuideHref = await teamNumberGuideLink.getAttribute('href');
+await teamNumberGuideLink.click();
+await userPage.waitForURL(/#\/team-number$/);
+await userPage.locator('.team-number-guide-document').waitFor({ state: 'visible' });
+await userPage.locator('.guide-markdown img').evaluateAll(async (images) => {
+  await Promise.all(images.map((image) => {
+    image.loading = 'eager';
+    if (image.complete && image.naturalWidth > 0) return Promise.resolve();
+    return new Promise((resolve) => { image.addEventListener('load', resolve, { once: true }); image.addEventListener('error', resolve, { once: true }); });
+  }));
+});
+const guideTitle = await userPage.locator('.guide-markdown h1').first().textContent();
+const guideImageSrcs = await userPage.locator('.guide-markdown img').evaluateAll((images) => images.map((image) => image.getAttribute('src')));
+const guideImagesLoaded = await userPage.locator('.guide-markdown img').evaluateAll((images) => images.every((image) => image.naturalWidth > 0 && image.naturalHeight > 0));
+const guideRecfEventsLink = userPage.locator('.guide-markdown a[href="https://www.recfevents.org"]').first();
+const guideMarkdownResponse = await userContext.request.get(`${base}/content/recf-team-registration-guide.md`);
+const guideAssetResponse = await userContext.request.get(`${base}/assets/guides/recf-team-registration/RECFeventsregisternow.png`);
 await userPage.screenshot({ path: `${output}/desktop-team-number-help.png`, fullPage: true });
-checks.push({ profile: 'team-number-help', helpPaths, helpHeadings, committeeRegistrationCopy, officialLink: await officialHelpLink.getAttribute('href'), committeeContact, overflow: await userPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1), valid: helpPaths === 3 && helpHeadings[1] === '尚无官方战队编号' && helpHeadings[2] === '无官方战队编号注册条件' && committeeRegistrationCopy === '无官方战队编号注册条件的战队，请联系赛事组委会提交学校/机构、教练和参赛组别信息，由组委会协助完成编号申请。' && await officialHelpLink.count() === 1 && committeeContact.includes('小周老师') && committeeContact.includes('654849662@qq.com') && committeeContact.includes('13761393714') });
+checks.push({ profile: 'team-number-help', href: teamNumberGuideHref, guideTitle, imageCount: guideImageSrcs.length, guideImagesLoaded, firstImage: guideImageSrcs[0], markdownContentType: guideMarkdownResponse.headers()['content-type'], firstImageContentType: guideAssetResponse.headers()['content-type'], overflow: await userPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1), valid: teamNumberGuideHref === '#/team-number' && guideTitle === '在 RECFEvents 中注册赛队编号' && guideImageSrcs.length === 18 && guideImageSrcs.every((src) => src?.startsWith('/assets/guides/recf-team-registration/')) && guideImagesLoaded && guideMarkdownResponse.ok() && guideMarkdownResponse.headers()['content-type']?.includes('text/markdown') && guideAssetResponse.ok() && guideAssetResponse.headers()['content-type']?.startsWith('image/png') && await guideRecfEventsLink.count() >= 1 && !(await userPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)) });
 for (const [index, name] of [['02', '视觉第二教练'], ['03', '视觉第三教练']]) {
   const coachResponse = await userContext.request.post(`${base}/api/coaches`, { headers: { 'X-CSRF-Token': userAuth.csrfToken }, data: { name, gender: '男', phone: `138000000${index}`, org_name: '瑞卜德实验学校', email: `visual-coach-${index}@example.com`, nationality: '中国' } });
   if (!coachResponse.ok()) throw new Error(`Coach setup failed: ${coachResponse.status()} ${await coachResponse.text()}`);
@@ -331,8 +343,10 @@ checks.push({ profile: 'team-number-conflict', persistent: duplicateTeamNumberPe
 await userPage.getByRole('button', { name: '我知道了' }).click();
 await userPage.setViewportSize({ width: 375, height: 812 });
 await userPage.goto(`${base}/#/team-number`, { waitUntil: 'networkidle' });
+await userPage.locator('.team-number-guide-document').waitFor({ state: 'visible' });
 await userPage.screenshot({ path: `${output}/mobile-team-number-help.png`, fullPage: true });
-checks.push({ profile: 'mobile-team-number-help', paths: await userPage.locator('.help-path').count(), overflow: await userPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1), valid: await userPage.locator('.help-path').count() === 3 });
+const mobileGuideImageCount = await userPage.locator('.guide-markdown img').count();
+checks.push({ profile: 'mobile-team-number-help', imageCount: mobileGuideImageCount, overflow: await userPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1), valid: mobileGuideImageCount === 18 && !(await userPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)) });
 await userPage.setViewportSize({ width: 1440, height: 1000 });
 const featureAdminContext = await browser.newContext();
 const featureAdminAuth = await login(featureAdminContext, 'admin@ruibude.local', 'Admin123!');

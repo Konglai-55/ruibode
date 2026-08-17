@@ -1263,8 +1263,11 @@ async function adminTeamFormPage(id) {
   const form=$('form[data-form="admin-team"]');syncTeamNumberField(form);syncCoachChoiceLimit(form);
 }
 
-function teamNumberHelpPage() {
-  app.innerHTML=`<section class="page-section"><div class="container"><nav class="breadcrumb"><a href="#/account/teams/new">创建战队</a>${icon('chevron',14)}<span>获取战队编号</span></nav><div class="page-head"><div><h1>如何获取战队编号？</h1><p class="lead">战队编号用于赛事识别与成绩归档，请使用赛事体系认可的正式编号。</p></div></div><div class="team-number-help"><article class="help-path"><div class="step-num">1</div><h2>已有官方编号</h2><p>如果战队已经在官方竞赛体系注册，请直接填写已获得的战队编号。编号通常由字母和数字组成。</p><div class="info-banner">${icon('info')}<div>请核对编号归属与赛季有效性，避免使用其他战队编号。</div></div></article><article class="help-path"><div class="step-num">2</div><h2>尚无官方战队编号</h2><p>请自行创建 RECF 官方编号，详情请参阅 <a href="https://kb.roboticseducation.org/hc/en-us/articles/41002213601559-Registering-Teams-and-Events-in-RECFEvents" target="_blank" rel="noopener noreferrer">RECF 官方编号注册说明</a>。</p><div class="info-banner">${icon('info')}<div>完成注册后，请将取得的官方战队编号填写到战队资料中。</div></div></article><article class="help-path"><div class="step-num">3</div><h2>无官方战队编号注册条件</h2><p>无官方战队编号注册条件的战队，请联系赛事组委会提交学校/机构、教练和参赛组别信息，由组委会协助完成编号申请。</p><address class="committee-contact"><span><strong>联系人</strong>小周老师</span><span><strong>组委会邮箱</strong><a href="mailto:654849662@qq.com">654849662@qq.com</a></span><span><strong>咨询电话</strong><a href="tel:13761393714">13761393714</a></span></address></article></div><div class="card card-top"><div class="card-body"><h2>填写提示</h2><ul><li>编号必须全局唯一；如官方注册队号提示重复，请按页面提示联系赛事组委会核查。</li><li>创新组编号由系统按组别添加固定前缀，最终编号限 1–30 个 ASCII 字符。</li><li>战队名称可按学校或机构习惯填写，报名下拉框会组合显示编号和名称。</li><li>战队组别应与最终报名选择的参赛组别保持一致。</li></ul><a class="button button-primary" href="#/account/teams/new">返回创建战队</a></div></div></div></section>`;
+async function teamNumberHelpPage() {
+  const response = await fetch('/content/recf-team-registration-guide.md', { cache: 'no-store' });
+  if (!response.ok) throw new Error('战队编号获取指南加载失败');
+  const guideMarkdown = await response.text();
+  app.innerHTML=`<section class="page-section team-number-guide-page"><div class="container"><nav class="breadcrumb"><a href="#/account/teams/new">创建战队</a>${icon('chevron',14)}<span>获取战队编号</span></nav><div class="page-head"><div><h1>如何获取战队编号？</h1><p class="lead">请按 RECFEvents 官方流程注册正式 RECF 战队编号，再回到本平台填写。</p></div><a class="button button-secondary" href="#/account/teams/new">${icon('arrow',17)}返回创建战队</a></div><article class="team-number-guide-document"><div class="markdown-body guide-markdown">${renderMarkdown(guideMarkdown)}</div></article></div></section>`;
 }
 
 function registrationActions(r) {
@@ -1767,7 +1770,7 @@ async function render() {
     else if(path==='/login')await loginPage();
     else if(path==='/register')await registerPage();
     else if(path==='/forgot-password')await forgotPasswordPage();
-    else if(path==='/team-number')teamNumberHelpPage();
+    else if(path==='/team-number')await teamNumberHelpPage();
     else if(path==='/account/profile')await profilePage();
     else if(path==='/account/members')await membersPage();
     else if(path==='/account/members/new')await memberFormPage();
