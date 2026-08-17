@@ -262,7 +262,7 @@ test('管理员可发布、替换和移除办赛通知 PDF，通知正文允许�
     assert.equal(publicPdf.response.status, 200);
     assert.match(publicPdf.response.headers.get('content-type'), /application\/pdf/);
     assert.equal(publicPdf.response.headers.get('content-disposition'), 'inline');
-    assert.equal(publicPdf.response.headers.get('x-frame-options'), 'SAMEORIGIN');
+    assert.equal(publicPdf.response.headers.get('x-frame-options'), null);
     assert.match(publicPdf.payload, /^%PDF-/);
 
     const secondUpload = await admin.request('/api/uploads', { method: 'POST', body: JSON.stringify({ kind: 'notice', dataUrl: pdfData('replacement notice') }) });

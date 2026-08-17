@@ -2079,7 +2079,7 @@ async function serveStatic(req, res, url, uploadDir = UPLOAD_DIR, appDb) {
     if (uploadRecord?.kind === 'notice' && uploadRecord.mime_type === 'application/pdf') {
       headers['Content-Disposition'] = 'inline';
       headers['Cross-Origin-Resource-Policy'] = 'same-origin';
-      headers['X-Frame-Options'] = 'SAMEORIGIN';
+      res.removeHeader('X-Frame-Options');
     }
     res.writeHead(200, headers);
     res.end(data);

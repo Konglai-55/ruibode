@@ -246,7 +246,7 @@ function noticeMarkdown(event) {
   const pdfUrl = safeUrl(event?.notice_url);
   const pdfViewerUrl = pdfUrl ? `${pdfUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH` : '';
   const body = content ? `<div class="markdown-body notice-markdown">${renderMarkdown(content)}</div>` : '';
-  const pdf = pdfUrl ? `<section class="notice-pdf" aria-labelledby="notice-pdf-title"><div class="notice-pdf-header"><div><span class="record-label">PDF 附件</span><h3 id="notice-pdf-title">办赛通知 PDF</h3></div></div><iframe class="notice-pdf-frame" src="${pdfViewerUrl}" title="${escapeHtml(event?.title || '赛事')}办赛通知 PDF" loading="lazy" sandbox="allow-scripts allow-same-origin" referrerpolicy="same-origin"></iframe><p class="notice-pdf-fallback">若当前浏览器无法直接显示 PDF，请换用支持内嵌 PDF 的浏览器查看。</p></section>` : '';
+  const pdf = pdfUrl ? `<section class="notice-pdf" aria-labelledby="notice-pdf-title"><div class="notice-pdf-header"><div><span class="record-label">PDF 附件</span><h3 id="notice-pdf-title">办赛通知 PDF</h3></div></div><iframe class="notice-pdf-frame" src="${pdfViewerUrl}" title="${escapeHtml(event?.title || '赛事')}办赛通知 PDF" loading="lazy" referrerpolicy="same-origin"></iframe><p class="notice-pdf-fallback">PDF 为页面内只读预览；若当前浏览器仍无法直接显示，请联系赛事管理员确认浏览器设置。</p></section>` : '';
   return body || pdf
     ? `${body}${pdf}`
     : `<div class="empty-state"><div class="empty-icon">${icon('file',30)}</div><h3>暂无办赛通知</h3><p>赛事管理员尚未发布通知正文或 PDF 文件。</p></div>`;

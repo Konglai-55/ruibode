@@ -23,6 +23,30 @@ const dir = await mkdtemp(join(tmpdir(), 'ruibude-visual-check-'));
 const output = resolve('artifacts/visual-check');
 await mkdir(output, { recursive: true });
 
+function makePdfBuffer(label) {
+  const text = String(label).replace(/[\\()]/g, '\\$&');
+  const stream = `BT\n/F1 28 Tf\n72 760 Td\n(${text}) Tj\n0 -44 Td\n/F1 16 Tf\n(This is a generated notice PDF preview.) Tj\nET`;
+  const objects = [
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n',
+    '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+    `5 0 obj\n<< /Length ${Buffer.byteLength(stream, 'ascii')} >>\nstream\n${stream}\nendstream\nendobj\n`,
+  ];
+  let body = '%PDF-1.4\n';
+  const offsets = [0];
+  for (const object of objects) {
+    offsets.push(Buffer.byteLength(body, 'ascii'));
+    body += object;
+  }
+  const xrefOffset = Buffer.byteLength(body, 'ascii');
+  body += `xref\n0 ${offsets.length}\n`;
+  body += '0000000000 65535 f \n';
+  for (const offset of offsets.slice(1)) body += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  body += `trailer\n<< /Size ${offsets.length} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(body, 'ascii');
+}
+
 async function login(context, email, password) {
   const response = await context.request.post(`${base}/api/auth/login`, { data: { account: email, password } });
   if (!response.ok()) throw new Error(`Login failed: ${response.status()} ${await response.text()}`);
@@ -580,7 +604,7 @@ const toolbarButtons = await adminPage.locator('.markdown-toolbar .markdown-tool
 const noticePdfInput = adminPage.locator('input[data-kind="notice"]');
 const noticeBodyOptional = await visualEditor.getAttribute('aria-required') === 'false';
 const noticePdfAccept = await noticePdfInput.getAttribute('accept');
-await noticePdfInput.setInputFiles({ name: 'visual-notice.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n% visual notice\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF') });
+await noticePdfInput.setInputFiles({ name: 'visual-notice.pdf', mimeType: 'application/pdf', buffer: makePdfBuffer('Ruibude notice PDF') });
 await adminPage.waitForFunction(() => document.querySelector('input[name="notice_url"]')?.value.startsWith('/uploads/'));
 const uploadedNoticeUrl = await adminPage.locator('input[name="notice_url"]').inputValue();
 const noticePdfPreviewVisible = await adminPage.getByText('已上传办赛通知 PDF', { exact: true }).isVisible();
@@ -596,12 +620,20 @@ const noticeEvents = await noticeEventsResponse.json();
 const noticeEvent = noticeEvents.events.find((event) => event.id === 1) || noticeEvents.events[0];
 const noticeAttachResponse = await adminContext.request.put(`${base}/api/admin/events/${noticeEvent.id}`, { headers: { 'X-CSRF-Token': adminAuth.csrfToken }, data: { ...noticeEvent, notice_markdown: '', notice_url: uploadedNoticeUrl } });
 if (!noticeAttachResponse.ok()) throw new Error(`Notice PDF attach failed: ${noticeAttachResponse.status()} ${await noticeAttachResponse.text()}`);
+const noticePdfAssetResponse = await adminContext.request.get(`${base}${uploadedNoticeUrl}`);
+const noticePdfContentType = noticePdfAssetResponse.headers()['content-type'];
+const noticePdfDisposition = noticePdfAssetResponse.headers()['content-disposition'];
+const noticePdfFrameHeader = noticePdfAssetResponse.headers()['x-frame-options'] || '';
 await adminPage.goto(`${base}/#/events/${noticeEvent.id}`, { waitUntil: 'networkidle' });
 await adminPage.locator('.notice-pdf-frame').waitFor({ state: 'visible' });
+await adminPage.waitForTimeout(1000);
 const pdfOnlyNoticeValid = await adminPage.locator('.notice-markdown').count() === 0
   && (await adminPage.locator('.notice-pdf-frame').getAttribute('src')) === `${uploadedNoticeUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`
   && await adminPage.locator('.notice-pdf-header a').count() === 0
-  && (await adminPage.locator('.notice-pdf-frame').getAttribute('sandbox')) === 'allow-scripts allow-same-origin';
+  && (await adminPage.locator('.notice-pdf-frame').getAttribute('sandbox')) === null
+  && noticePdfContentType?.startsWith('application/pdf')
+  && noticePdfDisposition === 'inline'
+  && noticePdfFrameHeader === '';
 await adminPage.screenshot({ path: `${output}/desktop-event-pdf-notice.png`, fullPage: true });
 checks.push({ profile: 'event-pdf-notice', pdfOnlyNoticeValid, overflow: await adminPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1), valid: pdfOnlyNoticeValid });
 await adminPage.setViewportSize({ width: 375, height: 812 });
