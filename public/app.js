@@ -734,6 +734,7 @@ function startHomeCarousel() {
 function homePage() {
   const droneVideoUrl = '/assets/home/drone-competition.mp4';
   const recfUrl = 'https://recf.org/';
+  const recfPartnerUrl = 'https://recf.org/about-us/our-partners/';
   const robotVexBannerUrl = 'http://robotvex.com/';
   const robotVexUrl = 'http://www.robotvex.com/';
   const codingUrl = 'https://coding.qq.com/home/';
@@ -758,12 +759,9 @@ function homePage() {
     ['program-vex-v5.png', 'Aerial Drone Competition PRO'],
   ];
   const partnerCards = [
-    { file: 'partner-card-6.png', alt: 'RECF 合作伙伴展示', href: recfUrl },
-    { file: 'partner-card-4.png', alt: '腾讯扣叮合作伙伴展示', href: codingUrl },
-    { file: 'partner-card-5.png', alt: '上海瑞卜德合作伙伴展示', href: robotVexUrl },
-    { file: 'partner-card-2.png', alt: 'RECF 合作伙伴展示', href: recfUrl },
-    { file: 'partner-card-1.png', alt: '腾讯扣叮合作伙伴展示', href: codingUrl },
-    { file: 'partner-card-recf.png', alt: '上海瑞卜德合作伙伴展示', href: robotVexUrl },
+    { src: '/assets/recf-header-logo.png', alt: 'RECF 合作伙伴展示', href: recfPartnerUrl },
+    { src: '/assets/home/partner-coding-logo.png', alt: '腾讯扣叮合作伙伴展示', href: codingUrl },
+    { src: '/assets/ruibude-logo.jpg', alt: '上海瑞卜德合作伙伴展示', href: robotVexUrl },
   ];
   app.innerHTML = `<section class="home-page" aria-label="上海瑞卜德教育首页">
     <div class="home-hero" aria-label="首页轮播图">
@@ -793,12 +791,12 @@ function homePage() {
     <div class="home-block home-partner-block">
       <div class="container">
         <div class="home-partner-head"><h2>合作伙伴</h2></div>
-        <div class="home-partner-grid">${partnerCards.map(({ file, alt, href }) => `<a ${externalLinkAttrs(href)} aria-label="访问 ${escapeHtml(alt)}"><img src="/assets/home/${file}" alt="${escapeHtml(alt)}" width="369" height="369"></a>`).join('')}</div>
+        <div class="home-partner-grid">${partnerCards.map(({ src, alt, href }) => `<a ${externalLinkAttrs(href)} aria-label="访问 ${escapeHtml(alt)}"><img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" width="320" height="260" loading="lazy"></a>`).join('')}</div>
       </div>
     </div>
     <div class="home-link-band">
       <div class="container home-link-band-inner">
-        <a class="home-link-logo-link" ${externalLinkAttrs(recfUrl)} aria-label="访问 RECF 官网"><img class="home-link-logo" src="/assets/home/partner-recf.png" alt="RECF" width="267" height="217"></a>
+        <a class="home-link-logo-link" ${externalLinkAttrs(recfPartnerUrl)} aria-label="访问 RECF 合作伙伴页面"><img class="home-link-logo" src="/assets/home/partner-recf.png" alt="RECF" width="267" height="217"></a>
         <nav class="home-link-list" aria-label="首页快捷入口">
           <a href="#/about">关于我们</a>
           <a href="#/about">团队</a>

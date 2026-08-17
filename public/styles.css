@@ -150,11 +150,11 @@ svg { flex: 0 0 auto; }
 .home-platform-logos { display: grid; grid-template-columns: repeat(2, minmax(0, 444px)); justify-content: center; gap: 96px; margin-top: 88px; }
 .home-partner-block { padding: 54px 0 76px; }
 .home-partner-head { margin-bottom: 28px; color: #1d3d66; text-align: center; }
-.home-partner-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
-.home-partner-grid a { display: block; line-height: 0; transition: transform .18s ease, filter .18s ease; }
+.home-partner-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; gap: 72px; }
+.home-partner-grid a { min-height: 220px; display: grid; place-items: center; line-height: 0; transition: transform .18s ease, filter .18s ease; }
 .home-partner-grid a:hover, .home-partner-grid a:focus-visible { transform: translateY(-2px); filter: brightness(1.04); }
 .home-partner-grid a:focus-visible { outline: 3px solid var(--primary); outline-offset: 4px; }
-.home-partner-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border: 1px solid var(--border-light); background: #fff; }
+.home-partner-grid img { width: min(100%, 260px); max-height: 220px; height: auto; object-fit: contain; border: 0; background: transparent; }
 .home-link-band { background: #1d3d66; }
 .home-link-band-inner { min-height: 350px; display: grid; grid-template-columns: 270px minmax(220px, 1fr) 282px; align-items: center; gap: 72px; padding-block: 52px; }
 .home-link-logo-link { display: grid; place-items: center; width: 100%; line-height: 0; transition: transform .18s ease, filter .18s ease; }

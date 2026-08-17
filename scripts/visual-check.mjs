@@ -93,6 +93,7 @@ for (const profile of [
       heroHrefs: [...document.querySelectorAll('.home-hero-link')].map((link) => link.getAttribute('href')),
       heroActions: [...document.querySelectorAll('.home-hero-link')].map((link) => link.dataset.action || ''),
       partnerHrefs: [...document.querySelectorAll('.home-partner-grid a')].map((link) => link.getAttribute('href')),
+      partnerImageSrcs: [...document.querySelectorAll('.home-partner-grid img')].map((image) => image.getAttribute('src')),
       platformHrefs: [...document.querySelectorAll('.home-platform-logos a')].map((link) => link.getAttribute('href')),
       logoHrefs: [...document.querySelectorAll('.home-link-logo-link')].map((link) => link.getAttribute('href')),
       homeHref: document.querySelector('.desktop-nav a[href="#/home"], .mobile-drawer a[href="#/home"]')?.getAttribute('href'),
@@ -101,10 +102,11 @@ for (const profile of [
   const ratioValid = profile.name === 'desktop-home' ? homeInfo.heroRatio >= 2.78 && homeInfo.heroRatio <= 2.92 : homeInfo.heroRatio >= 1.7;
   const expectedHeroHrefs = ['https://recf.org/', '#home-programs', 'http://robotvex.com/', '/assets/home/drone-competition.mp4', '/assets/home/drone-competition.mp4'];
   const expectedHeroActions = ['', 'scroll-home-programs', '', '', ''];
-  const expectedPartnerHrefs = ['https://recf.org/', 'https://coding.qq.com/home/', 'http://www.robotvex.com/', 'https://recf.org/', 'https://coding.qq.com/home/', 'http://www.robotvex.com/'];
+  const expectedPartnerHrefs = ['https://recf.org/about-us/our-partners/', 'https://coding.qq.com/home/', 'http://www.robotvex.com/'];
+  const expectedPartnerImageSrcs = ['/assets/recf-header-logo.png', '/assets/home/partner-coding-logo.png', '/assets/ruibude-logo.jpg'];
   const expectedPlatformHrefs = ['/assets/home/drone-competition.mp4', '/assets/home/drone-competition.mp4'];
-  const expectedLogoHrefs = ['https://recf.org/', 'http://www.robotvex.com/'];
-  checks.push({ profile: profile.name, ...homeInfo, overflow: homeInfo.scrollWidth > homeInfo.clientWidth + 1, valid: homeInfo.title === '准备好开启你的机器人竞技之旅了吗？' && homeInfo.programCount === 3 && homeInfo.dotCount === 5 && homeInfo.activeDot === '2' && homeInfo.activeHero === '/assets/home/hero-robotvex.png' && ratioValid && homeInfo.heroAligned && homeInfo.firstHeroLoaded && homeInfo.programImagesLoaded && homeInfo.homeHref === '#/home' && homeInfo.heroHrefs.join('|') === expectedHeroHrefs.join('|') && homeInfo.heroActions.join('|') === expectedHeroActions.join('|') && homeInfo.partnerHrefs.join('|') === expectedPartnerHrefs.join('|') && homeInfo.platformHrefs.join('|') === expectedPlatformHrefs.join('|') && homeInfo.logoHrefs.join('|') === expectedLogoHrefs.join('|') && homeInfo.scrollWidth <= homeInfo.clientWidth + 1 });
+  const expectedLogoHrefs = ['https://recf.org/about-us/our-partners/', 'http://www.robotvex.com/'];
+  checks.push({ profile: profile.name, ...homeInfo, overflow: homeInfo.scrollWidth > homeInfo.clientWidth + 1, valid: homeInfo.title === '准备好开启你的机器人竞技之旅了吗？' && homeInfo.programCount === 3 && homeInfo.dotCount === 5 && homeInfo.activeDot === '2' && homeInfo.activeHero === '/assets/home/hero-robotvex.png' && ratioValid && homeInfo.heroAligned && homeInfo.firstHeroLoaded && homeInfo.programImagesLoaded && homeInfo.homeHref === '#/home' && homeInfo.heroHrefs.join('|') === expectedHeroHrefs.join('|') && homeInfo.heroActions.join('|') === expectedHeroActions.join('|') && homeInfo.partnerHrefs.join('|') === expectedPartnerHrefs.join('|') && homeInfo.partnerImageSrcs.join('|') === expectedPartnerImageSrcs.join('|') && homeInfo.platformHrefs.join('|') === expectedPlatformHrefs.join('|') && homeInfo.logoHrefs.join('|') === expectedLogoHrefs.join('|') && homeInfo.scrollWidth <= homeInfo.clientWidth + 1 });
   await context.close();
 }
 
