@@ -13,6 +13,7 @@ const state = {
   passwordResetChallenge: null,
   renderId: 0,
   lastFocus: null,
+  markdownSelection: null,
   activityAvailability: { volunteer: false, spectator: false },
   homeCarouselTimer: null,
 };
@@ -115,6 +116,7 @@ const iconPaths = {
   link: '<path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.1 1.1M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.1-1.1"/>',
   table: '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 10h18M9 4v16M15 4v16"/>',
   code: '<path d="M8 9l-4 3 4 3M16 9l4 3-4 3M14 5l-4 14"/>',
+  image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="M21 16l-5-5L5 19"/>',
 };
 
 function icon(name, size = 20) {
@@ -140,11 +142,23 @@ function safeMarkdownHref(value) {
   } catch { return ''; }
 }
 
+function safeMarkdownImageSrc(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^\/(?:assets|uploads)\/[^\s"'<>]+$/.test(raw)) return raw;
+  return '';
+}
+
 function markdownInline(value) {
   const tokens = [];
   const hold = (html) => `\uE000${tokens.push(html) - 1}\uE001`;
   let text = String(value ?? '');
   text = text.replace(/`([^`\n]+)`/g, (_, code) => hold(`<code>${escapeHtml(code)}</code>`));
+  text = text.replace(/!\[([^\]\n]*)\]\(([^)\s]+)\)/g, (source, label, src) => {
+    const safeSrc = safeMarkdownImageSrc(src);
+    if (!safeSrc) return source;
+    return hold(`<img src="${escapeHtml(safeSrc)}" alt="${escapeHtml(label || '通知图片')}" loading="lazy">`);
+  });
   text = text.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (source, label, href) => {
     const safeHref = safeMarkdownHref(href);
     if (!safeHref) return source;
@@ -410,13 +424,14 @@ function markdownField(name, label, value = '', isRequired = true) {
     ['ol', '有序列表', icon('orderedList', 18)],
     ['quote', '引用', icon('quote', 18)],
     ['link', '插入链接', icon('link', 18)],
+    ['image', '插入图片', icon('image', 18)],
     ['table', '插入表格', icon('table', 18)],
     ['code', '代码块', icon('code', 18)],
   ];
   const toggleFormats = new Set(['h1', 'h2', 'bold', 'italic', 'ul', 'ol', 'quote']);
   const toolbar = tools.map(([format, toolLabel, toolIcon, shortcut]) => `<button class="markdown-tool" type="button" data-action="markdown-format" data-format="${format}" aria-label="${toolLabel}" title="${toolLabel}" ${toggleFormats.has(format) ? 'aria-pressed="false"' : ''} ${shortcut ? `aria-keyshortcuts="${shortcut}"` : ''}>${toolIcon}</button>`).join('');
   const visualContent = content.trim() ? renderMarkdown(content) : '';
-  return `<div class="form-field full markdown-editor"><span class="field-label" id="${name}-label">${escapeHtml(label)}${requiredMark}</span><div class="markdown-compose"><div class="markdown-toolbar" role="toolbar" aria-label="通知格式工具栏">${toolbar}</div><div class="markdown-body markdown-visual-editor" id="${name}-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="${name}-label" aria-required="${String(isRequired)}" spellcheck="true" data-markdown-visual data-markdown-name="${name}" data-required="${String(isRequired)}" data-placeholder="直接输入办赛通知内容……">${visualContent}</div><textarea id="${name}" name="${name}" maxlength="50000" data-markdown-source hidden>${escapeHtml(content)}</textarea></div><p class="helper">直接在排版内容上编辑；选中文字后可设置标题、加粗、列表、引用、链接、表格或代码块。</p><p class="field-error" data-error="${name}" role="alert"></p></div>`;
+  return `<div class="form-field full markdown-editor"><span class="field-label" id="${name}-label">${escapeHtml(label)}${requiredMark}</span><div class="markdown-compose"><div class="markdown-toolbar" role="toolbar" aria-label="通知格式工具栏">${toolbar}</div><input class="sr-only markdown-image-input" id="${name}-image-file" type="file" accept="image/jpeg,image/png,image/webp" data-markdown-image-input data-kind="notice_image" aria-label="选择通知正文图片"><div class="markdown-body markdown-visual-editor" id="${name}-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="${name}-label" aria-required="${String(isRequired)}" spellcheck="true" data-markdown-visual data-markdown-name="${name}" data-required="${String(isRequired)}" data-placeholder="直接输入办赛通知内容……">${visualContent}</div><textarea id="${name}" name="${name}" maxlength="50000" data-markdown-source hidden>${escapeHtml(content)}</textarea></div><p class="helper">直接在排版内容上编辑；选中文字后可设置标题、加粗、列表、引用、链接、图片、表格或代码块；也可以直接粘贴截图或付款码图片。</p><p class="field-error" data-error="${name}" role="alert"></p></div>`;
 }
 
 function editorInlineMarkdown(node) {
@@ -431,6 +446,11 @@ function editorInlineMarkdown(node) {
   if (tag === 'a') {
     const href = safeMarkdownHref(node.getAttribute('href'));
     return href ? `[${content || href}](${href})` : content;
+  }
+  if (tag === 'img') {
+    const src = safeMarkdownImageSrc(node.getAttribute('src'));
+    const alt = String(node.getAttribute('alt') || '通知图片').replace(/[\[\]\r\n]/g, ' ').trim().slice(0, 80) || '通知图片';
+    return src ? `![${alt}](${src})` : '';
   }
   if (tag === 'code' && node.parentElement?.tagName.toLowerCase() !== 'pre') return content ? `\`${content}\`` : '';
   return content;
@@ -457,6 +477,7 @@ function editorBlockMarkdown(node) {
   const inline = () => [...node.childNodes].map(editorInlineMarkdown).join('').trim();
   if (/^h[1-4]$/.test(tag)) return `${'#'.repeat(Number(tag[1]))} ${inline()}\n\n`;
   if (tag === 'p') return inline() ? `${inline()}\n\n` : '';
+  if (tag === 'img') return editorInlineMarkdown(node) ? `${editorInlineMarkdown(node)}\n\n` : '';
   if (tag === 'ul' || tag === 'ol') return `${editorListMarkdown(node)}\n\n`;
   if (tag === 'blockquote') {
     const content = [...node.childNodes].map(editorBlockMarkdown).join('').trim() || inline();
@@ -500,6 +521,25 @@ function ensureVisualSelection(editor) {
   return selection;
 }
 
+function rememberVisualSelection(editor) {
+  const selection = ensureVisualSelection(editor);
+  if (!selection?.rangeCount) return;
+  state.markdownSelection = { editor, range: selection.getRangeAt(0).cloneRange() };
+}
+
+function restoreVisualSelection(editor) {
+  const selection = window.getSelection();
+  const saved = state.markdownSelection;
+  if (saved?.editor === editor) {
+    try {
+      selection.removeAllRanges();
+      selection.addRange(saved.range);
+      return selection;
+    } catch {}
+  }
+  return ensureVisualSelection(editor);
+}
+
 function updateVisualToolbar(editor) {
   const toolbar = editor?.closest('.markdown-compose')?.querySelector('.markdown-toolbar');
   if (!toolbar) return;
@@ -519,7 +559,7 @@ function updateVisualToolbar(editor) {
 }
 
 function insertVisualHtml(editor, html) {
-  ensureVisualSelection(editor);
+  restoreVisualSelection(editor);
   document.execCommand('insertHTML', false, html);
   syncVisualMarkdown(editor);
 }
@@ -548,6 +588,15 @@ function applyMarkdownFormat(button) {
     const selection = window.getSelection();
     if (selection.isCollapsed) insertVisualHtml(editor, `<a href="${escapeHtml(href)}">${escapeHtml(href)}</a>`);
     else document.execCommand('createLink', false, href);
+  }
+  if (format === 'image') {
+    rememberVisualSelection(editor);
+    const input = button.closest('.markdown-editor')?.querySelector('[data-markdown-image-input]');
+    if (input) {
+      input.dataset.useSavedSelection = 'true';
+      input.click();
+    }
+    return;
   }
   if (format === 'table') insertVisualHtml(editor, '<table><thead><tr><th>项目</th><th>内容</th></tr></thead><tbody><tr><td>示例</td><td>请填写</td></tr></tbody></table><p><br></p>');
   if (format === 'code') insertVisualHtml(editor, '<pre><code>在这里输入代码</code></pre><p><br></p>');
@@ -1346,7 +1395,7 @@ async function adminEventFormPage(id) {
   if(!requireAdmin())return; let event={groups:[...DEFAULT_TEAM_GROUPS],status:'published',published_at:new Date().toISOString(),contact_name:'小周老师',contact_phone:'13761393714',payee:'上海瑞卜德教育科技有限公司',account_no:'153189255',bank_code:'',bank_name:'中国民生银行股份有限公司上海凯旋支行',allow_volunteer:false,allow_spectator:false,refund_deadline_days:10};
   if(id){const data=await apiFetch('/api/admin/events');event=data.events.find((item)=>item.id===Number(id));if(!event)throw new Error('未找到赛事');}
   const groupValue=(event.groups||[]).join('\n');
-  const content=`<div class="card"><div class="card-header"><h2>赛事基本信息</h2></div><div class="card-body"><form data-form="admin-event" data-id="${id||''}" novalidate><div class="form-grid">${field('title','赛事名称',event.title,{required:true,full:true,maxlength:200})}${field('published_at','发布时间',toInputDate(event.published_at),{type:'datetime-local',required:true})}${field('status','发布状态',event.status,{type:'select',required:true,choices:[['published','立即发布'],['draft','保存为草稿']]})}${filePicker('image_url','赛事图片',event.image_url,'event',false)}${field('description','赛事介绍',event.description,{type:'textarea',required:true,full:true})}${field('starts_at','赛事开始时间',toInputDate(event.starts_at),{type:'datetime-local',required:true})}${field('ends_at','赛事结束时间',toInputDate(event.ends_at),{type:'datetime-local',required:true})}${field('contact_name','联系人',event.contact_name,{required:true})}${field('contact_phone','电话',event.contact_phone,{type:'tel',required:true,inputmode:'tel'})}${field('location','比赛地点',event.location,{required:true,full:true})}${field('registration_start','报名开始时间',toInputDate(event.registration_start),{type:'datetime-local',required:true})}${field('registration_end','报名结束时间',toInputDate(event.registration_end),{type:'datetime-local',required:true})}${field('refund_deadline_days','报名截止前多少天停止退费申请',event.refund_deadline_days??10,{type:'number',required:true,min:0,max:365,step:1,inputmode:'numeric',helper:'默认 10 天；按报名截止日期向前计算，并允许提交至该日 24:00。'})}<div class="form-field"><label for="refund_deadline_preview">截止提交退费申请日期</label><input class="form-control refund-deadline-preview" id="refund_deadline_preview" type="text" readonly aria-readonly="true" data-refund-deadline-preview><p class="helper" aria-live="polite" data-refund-deadline-helper>系统将根据报名截止日期与提前天数自动计算。</p></div>${field('groups_text','参赛组别（每行一个）',groupValue,{type:'textarea',required:true,full:true,helper:'可在默认组别基础上新增未来赛季组别；每行填写一个组别。'})}${eventActivitySettings(event)}</div><hr class="divider"><h2>收款信息</h2><div class="form-grid">${field('payee','付款户名',event.payee,{required:true})}${field('account_no','收款账号',event.account_no,{required:true})}${field('bank_code','开户行代码',event.bank_code)}${field('bank_name','开户行',event.bank_name,{required:true})}</div><hr class="divider"><h2>办赛通知</h2><div class="info-banner notice-compose-info">${icon('info',22)}<div><strong>正文和 PDF 均为选填</strong><br>填写正文时会先显示正文；上传 PDF 后，PDF 内容会自动显示在正文下方。正文为空时，前台只显示 PDF。</div></div><div class="form-grid notice-compose-grid">${markdownField('notice_markdown','通知正文（选填）',event.notice_markdown,false)}${filePicker('notice_url','办赛通知 PDF（选填）',event.notice_url,'notice',false)}</div><div class="form-actions"><a class="button button-secondary" href="#/admin/events">取消</a><button class="button button-primary" type="submit">${id?'保存赛事':'创建赛事'}</button></div></form></div></div>`;
+  const content=`<div class="card"><div class="card-header"><h2>赛事基本信息</h2></div><div class="card-body"><form data-form="admin-event" data-id="${id||''}" novalidate><div class="form-grid">${field('title','赛事名称',event.title,{required:true,full:true,maxlength:200})}${field('published_at','发布时间',toInputDate(event.published_at),{type:'datetime-local',required:true})}${field('status','发布状态',event.status,{type:'select',required:true,choices:[['published','立即发布'],['draft','保存为草稿']]})}${filePicker('image_url','赛事图片',event.image_url,'event',false)}${field('description','赛事介绍',event.description,{type:'textarea',required:true,full:true})}${field('starts_at','赛事开始时间',toInputDate(event.starts_at),{type:'datetime-local',required:true})}${field('ends_at','赛事结束时间',toInputDate(event.ends_at),{type:'datetime-local',required:true})}${field('contact_name','联系人',event.contact_name,{required:true})}${field('contact_phone','电话',event.contact_phone,{type:'tel',required:true,inputmode:'tel'})}${field('location','比赛地点',event.location,{required:true,full:true})}${field('registration_start','报名开始时间',toInputDate(event.registration_start),{type:'datetime-local',required:true})}${field('registration_end','报名结束时间',toInputDate(event.registration_end),{type:'datetime-local',required:true})}${field('refund_deadline_days','报名截止前多少天停止退费申请',event.refund_deadline_days??10,{type:'number',required:true,min:0,max:365,step:1,inputmode:'numeric',helper:'默认 10 天；按报名截止日期向前计算，并允许提交至该日 24:00。'})}<div class="form-field"><label for="refund_deadline_preview">截止提交退费申请日期</label><input class="form-control refund-deadline-preview" id="refund_deadline_preview" type="text" readonly aria-readonly="true" data-refund-deadline-preview><p class="helper" aria-live="polite" data-refund-deadline-helper>系统将根据报名截止日期与提前天数自动计算。</p></div>${field('groups_text','参赛组别（每行一个）',groupValue,{type:'textarea',required:true,full:true,helper:'可在默认组别基础上新增未来赛季组别；每行填写一个组别。'})}${eventActivitySettings(event)}</div><hr class="divider"><h2>收款信息</h2><div class="form-grid">${field('payee','付款户名',event.payee,{required:true})}${field('account_no','收款账号',event.account_no,{required:true})}${field('bank_code','开户行代码',event.bank_code)}${field('bank_name','开户行',event.bank_name,{required:true})}</div><hr class="divider"><h2>办赛通知</h2><div class="info-banner notice-compose-info">${icon('info',22)}<div><strong>正文和 PDF 均为选填</strong><br>填写正文时可用图片按钮或直接粘贴付款码照片；上传 PDF 后，PDF 内容会自动显示在正文下方。正文为空时，前台只显示 PDF。</div></div><div class="form-grid notice-compose-grid">${markdownField('notice_markdown','通知正文（选填）',event.notice_markdown,false)}${filePicker('notice_url','办赛通知 PDF（选填）',event.notice_url,'notice',false)}</div><div class="form-actions"><a class="button button-secondary" href="#/admin/events">取消</a><button class="button button-primary" type="submit">${id?'保存赛事':'创建赛事'}</button></div></form></div></div>`;
   app.innerHTML=adminShell(id?'编辑赛事':'发布赛事','填写赛事详情与报名时段，并可发布通知正文和 PDF 文件。',content);
   syncAdminRefundDeadline($('form[data-form="admin-event"]'));
 }
@@ -1548,6 +1597,41 @@ async function sendCode(button) {
   try{const result=await apiFetch('/api/auth/send-code',{method:'POST',body:JSON.stringify({email,captcha,captchaId})});toast(result.message);if(result.devCode){form.elements.code.value=result.devCode;toast(`开发环境验证码已自动填入：${result.devCode}`);}let seconds=60;button.disabled=true;button.textContent=`${seconds} 秒后重试`;const timer=setInterval(()=>{seconds-=1;button.textContent=`${seconds} 秒后重试`;if(seconds<=0){clearInterval(timer);button.disabled=false;button.textContent='重新获取';}},1000);}catch(error){showErrors(form,error.fields);toast(error.message,'error');setLoading(button,false);await refreshCaptcha().catch(()=>{});}
 }
 
+function markdownImageAlt(file) {
+  return String(file?.name || '通知图片').replace(/\.[^.]+$/, '').replace(/[\[\]\r\n]/g, ' ').trim().slice(0, 80) || '通知图片';
+}
+
+async function uploadMarkdownImageFile(editor, file) {
+  if (!file) return;
+  if (!['image/jpeg','image/png','image/webp'].includes(file.type)) { toast('正文图片仅支持 JPG、PNG、WebP', 'error'); return; }
+  if (file.size > 4 * 1024 * 1024) { toast('正文图片不能超过 4MB', 'error'); return; }
+  editor.classList.add('uploading');
+  try {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    const result = await apiFetch('/api/uploads', { method: 'POST', body: JSON.stringify({ kind: 'notice_image', dataUrl }) });
+    insertVisualHtml(editor, `<p><img src="${safeUrl(result.url)}" alt="${escapeHtml(markdownImageAlt(file))}"></p><p><br></p>`);
+    toast('图片已插入正文');
+  } catch (error) {
+    toast(error.message, 'error');
+  } finally {
+    editor.classList.remove('uploading');
+  }
+}
+
+async function uploadMarkdownImage(input) {
+  const editor = input.closest('.markdown-editor')?.querySelector('[data-markdown-visual]');
+  const file = input.files?.[0];
+  if (editor && input.dataset.useSavedSelection !== 'true') rememberVisualSelection(editor);
+  delete input.dataset.useSavedSelection;
+  if (editor && file) await uploadMarkdownImageFile(editor, file);
+  input.value = '';
+}
+
 async function uploadFile(input) {
   const file=input.files?.[0];if(!file)return;const form=input.closest('form');const target=input.dataset.target;const hidden=form.elements[target];const preview=form.querySelector(`[data-preview="${CSS.escape(target)}"]`);
   const maxMb=Number(input.dataset.maxMb||4);const previousValue=hidden.value;const previousPreview=preview?.innerHTML||'';const clearButton=form.querySelector(`[data-action="clear-upload"][data-target="${CSS.escape(target)}"]`);
@@ -1578,8 +1662,8 @@ async function deleteAdminTeam(id,label) { const ok=await confirmAction('删除�
 document.addEventListener('input',(event)=>{const editor=event.target.closest('[data-markdown-visual]');if(editor)syncVisualMarkdown(editor);if(event.target.name==='number'&&event.target.closest('[data-form="team"],[data-form="admin-team"]'))syncTeamNumberField(event.target.form);if(['registration_end','refund_deadline_days'].includes(event.target.name)&&event.target.closest('[data-form="admin-event"]'))syncAdminRefundDeadline(event.target.form);});
 document.addEventListener('keydown',(event)=>{const editor=event.target.closest('[data-markdown-visual]');if(!editor||!(event.ctrlKey||event.metaKey))return;const format=event.key.toLowerCase()==='b'?'bold':event.key.toLowerCase()==='i'?'italic':'';if(!format)return;event.preventDefault();applyMarkdownFormat(editor.closest('.markdown-editor').querySelector(`[data-format="${format}"]`));});
 document.addEventListener('pointerdown',(event)=>{if(event.target.closest('.markdown-tool'))event.preventDefault();});
-document.addEventListener('paste',(event)=>{const editor=event.target.closest('[data-markdown-visual]');if(!editor)return;event.preventDefault();document.execCommand('insertText',false,event.clipboardData?.getData('text/plain')||'');syncVisualMarkdown(editor);});
-document.addEventListener('selectionchange',()=>{const selection=window.getSelection();const anchor=selection?.anchorNode?.nodeType===Node.ELEMENT_NODE?selection.anchorNode:selection?.anchorNode?.parentElement;const editor=anchor?.closest?.('[data-markdown-visual]');if(editor)updateVisualToolbar(editor);});
+document.addEventListener('paste',async(event)=>{const editor=event.target.closest('[data-markdown-visual]');if(!editor)return;const items=[...(event.clipboardData?.items||[])];const imageFiles=items.filter((item)=>item.kind==='file'&&item.type.startsWith('image/')).map((item)=>item.getAsFile()).filter(Boolean);event.preventDefault();if(imageFiles.length){rememberVisualSelection(editor);for(const file of imageFiles)await uploadMarkdownImageFile(editor,file);return;}document.execCommand('insertText',false,event.clipboardData?.getData('text/plain')||'');syncVisualMarkdown(editor);});
+document.addEventListener('selectionchange',()=>{const selection=window.getSelection();const anchor=selection?.anchorNode?.nodeType===Node.ELEMENT_NODE?selection.anchorNode:selection?.anchorNode?.parentElement;const editor=anchor?.closest?.('[data-markdown-visual]');if(editor){rememberVisualSelection(editor);updateVisualToolbar(editor);}});
 document.addEventListener('submit',(event)=>{
   const form=event.target.closest('form[data-admin-search]');if(!form)return;
   event.preventDefault();
@@ -1590,6 +1674,7 @@ document.addEventListener('submit',(event)=>{
 document.addEventListener('submit',handleSubmit);
 document.addEventListener('change',async(event)=>{
   const input=event.target;
+  if(input.matches('[data-markdown-image-input]'))return uploadMarkdownImage(input);
   if(input.matches('.upload-input'))return uploadFile(input);
   if(input.matches('[data-admin-review-group]')){
     const {path,query}=routeInfo();const group=input.value;

@@ -584,19 +584,33 @@ await visualEditor.evaluate((editor) => {
   selection.addRange(range);
 });
 await adminPage.getByRole('button', { name: '加粗' }).click();
+await visualEditor.evaluate((editor) => {
+  const range = document.createRange();
+  range.selectNodeContents(editor);
+  range.collapse(false);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+  document.dispatchEvent(new Event('selectionchange'));
+});
+const noticeImageInput = adminPage.locator('[data-markdown-image-input]');
+await noticeImageInput.setInputFiles({ name: 'payment-code.png', mimeType: 'image/png', buffer: Buffer.from(tinyPng.split(',')[1], 'base64') });
+await adminPage.waitForFunction(() => document.querySelector('[data-markdown-visual] img')?.getAttribute('src')?.startsWith('/uploads/notice_image-'));
 const storedMarkdown = await adminPage.locator('[data-markdown-source]').inputValue();
+const noticeImageUrl = await visualEditor.locator('img').first().getAttribute('src');
 const visualEditorValid = await visualEditor.getAttribute('contenteditable') === 'true'
   && await visualEditor.locator('h1').textContent() === '办赛通知预览'
   && await visualEditor.locator('li').count() === 2
   && await visualEditor.locator('table').count() === 1
-  && await visualEditor.locator('strong, b').first().textContent() === '请各参赛单位';
+  && await visualEditor.locator('strong, b').first().textContent() === '请各参赛单位'
+  && await visualEditor.locator('img').count() === 1;
 const visualTableStyled = await visualEditor.locator('table').evaluate((table) => {
   const cell = table.querySelector('td');
   return getComputedStyle(table).borderCollapse === 'collapse'
     && cell
     && getComputedStyle(cell).borderTopWidth === '1px';
 });
-const markdownStorageValid = storedMarkdown.includes('**请各参赛单位**') && storedMarkdown.includes('| 项目 | 内容 |') && storedMarkdown.includes('- 核对战队资料');
+const markdownStorageValid = storedMarkdown.includes('**请各参赛单位**') && storedMarkdown.includes('| 项目 | 内容 |') && storedMarkdown.includes('- 核对战队资料') && storedMarkdown.includes('![payment-code](/uploads/notice_image-');
 const sourceEditorRemoved = await adminPage.locator('[data-markdown-input], [data-markdown-preview]').count() === 0;
 const markdownWordingRemoved = await adminPage.getByText('通知正文（Markdown）', { exact: true }).count() === 0
   && await adminPage.getByText('Markdown 通知正文', { exact: false }).count() === 0;
@@ -610,7 +624,7 @@ const uploadedNoticeUrl = await adminPage.locator('input[name="notice_url"]').in
 const noticePdfPreviewVisible = await adminPage.getByText('已上传办赛通知 PDF', { exact: true }).isVisible();
 const noticeRemoveVisible = await adminPage.getByRole('button', { name: '移除 PDF', exact: true }).isVisible();
 await adminPage.screenshot({ path: `${output}/desktop-admin-event-markdown.png`, fullPage: true });
-checks.push({ profile: 'admin-event-markdown', toolbarButtons, visualEditorValid, visualTableStyled, markdownStorageValid, sourceEditorRemoved, markdownWordingRemoved, noticeBodyOptional, noticePdfAccept, noticePdfPreviewVisible, noticeRemoveVisible, valid: toolbarButtons === 10 && visualEditorValid && visualTableStyled && markdownStorageValid && sourceEditorRemoved && markdownWordingRemoved && noticeBodyOptional && noticePdfAccept === 'application/pdf' && noticePdfPreviewVisible && noticeRemoveVisible });
+checks.push({ profile: 'admin-event-markdown', toolbarButtons, visualEditorValid, visualTableStyled, markdownStorageValid, sourceEditorRemoved, markdownWordingRemoved, noticeBodyOptional, noticePdfAccept, noticePdfPreviewVisible, noticeRemoveVisible, valid: toolbarButtons === 11 && visualEditorValid && visualTableStyled && markdownStorageValid && sourceEditorRemoved && markdownWordingRemoved && noticeBodyOptional && noticePdfAccept === 'application/pdf' && noticePdfPreviewVisible && noticeRemoveVisible });
 await adminPage.getByRole('button', { name: '移除 PDF', exact: true }).click();
 const noticeRemovalValid = await adminPage.locator('input[name="notice_url"]').inputValue() === ''
   && await adminPage.locator('[data-preview="notice_url"]').getByText('尚未上传', { exact: true }).isVisible();
@@ -618,13 +632,21 @@ checks.push({ profile: 'admin-event-pdf-remove', valid: noticeRemovalValid });
 const noticeEventsResponse = await adminContext.request.get(`${base}/api/admin/events`);
 const noticeEvents = await noticeEventsResponse.json();
 const noticeEvent = noticeEvents.events.find((event) => event.id === 1) || noticeEvents.events[0];
+const noticeImageAttachResponse = await adminContext.request.put(`${base}/api/admin/events/${noticeEvent.id}`, { headers: { 'X-CSRF-Token': adminAuth.csrfToken }, data: { ...noticeEvent, notice_markdown: storedMarkdown, notice_url: '' } });
+if (!noticeImageAttachResponse.ok()) throw new Error(`Notice image attach failed: ${noticeImageAttachResponse.status()} ${await noticeImageAttachResponse.text()}`);
+await adminPage.goto(`${base}/#/events/${noticeEvent.id}?notice=image`, { waitUntil: 'networkidle' });
+await adminPage.locator('.notice-markdown img').waitFor({ state: 'visible' });
+const noticeImageAssetResponse = await adminContext.request.get(`${base}${noticeImageUrl}`);
+const noticeImageVisible = await adminPage.locator('.notice-markdown img').first().evaluate((image) => image.complete && image.naturalWidth > 0);
+const noticeImageOverflow = await adminPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
+checks.push({ profile: 'event-notice-image', noticeImageUrl, contentType: noticeImageAssetResponse.headers()['content-type'], visible: noticeImageVisible, overflow: noticeImageOverflow, valid: noticeImageUrl?.startsWith('/uploads/notice_image-') && noticeImageAssetResponse.ok() && noticeImageAssetResponse.headers()['content-type']?.startsWith('image/png') && noticeImageVisible && !noticeImageOverflow });
 const noticeAttachResponse = await adminContext.request.put(`${base}/api/admin/events/${noticeEvent.id}`, { headers: { 'X-CSRF-Token': adminAuth.csrfToken }, data: { ...noticeEvent, notice_markdown: '', notice_url: uploadedNoticeUrl } });
 if (!noticeAttachResponse.ok()) throw new Error(`Notice PDF attach failed: ${noticeAttachResponse.status()} ${await noticeAttachResponse.text()}`);
 const noticePdfAssetResponse = await adminContext.request.get(`${base}${uploadedNoticeUrl}`);
 const noticePdfContentType = noticePdfAssetResponse.headers()['content-type'];
 const noticePdfDisposition = noticePdfAssetResponse.headers()['content-disposition'];
 const noticePdfFrameHeader = noticePdfAssetResponse.headers()['x-frame-options'] || '';
-await adminPage.goto(`${base}/#/events/${noticeEvent.id}`, { waitUntil: 'networkidle' });
+await adminPage.goto(`${base}/#/events/${noticeEvent.id}?notice=pdf`, { waitUntil: 'networkidle' });
 await adminPage.locator('.notice-pdf-frame').waitFor({ state: 'visible' });
 await adminPage.waitForTimeout(1000);
 const pdfOnlyNoticeValid = await adminPage.locator('.notice-markdown').count() === 0

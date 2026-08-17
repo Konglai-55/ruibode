@@ -475,7 +475,7 @@ class AppDatabase {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         url TEXT NOT NULL UNIQUE,
         owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        kind TEXT NOT NULL CHECK(kind IN ('avatar','member','payment','event','notice')),
+        kind TEXT NOT NULL CHECK(kind IN ('avatar','member','payment','event','notice','notice_image')),
         mime_type TEXT NOT NULL,
         size_bytes INTEGER NOT NULL,
         created_at TEXT NOT NULL
@@ -563,6 +563,26 @@ class AppDatabase {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
+    `);
+    const uploadsTable = this.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='uploads'").get()?.sql || '';
+    if (uploadsTable && !uploadsTable.includes("'notice_image'")) {
+      this.db.exec(`
+        CREATE TABLE uploads_next (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          url TEXT NOT NULL UNIQUE,
+          owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          kind TEXT NOT NULL CHECK(kind IN ('avatar','member','payment','event','notice','notice_image')),
+          mime_type TEXT NOT NULL,
+          size_bytes INTEGER NOT NULL,
+          created_at TEXT NOT NULL
+        );
+        INSERT INTO uploads_next(id,url,owner_user_id,kind,mime_type,size_bytes,created_at)
+          SELECT id,url,owner_user_id,kind,mime_type,size_bytes,created_at FROM uploads;
+        DROP TABLE uploads;
+        ALTER TABLE uploads_next RENAME TO uploads;
+      `);
+    }
+    this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_member_user ON members(user_id);
       CREATE INDEX IF NOT EXISTS idx_login_challenge_user ON login_challenges(user_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_challenges(user_id, created_at);
@@ -1344,6 +1364,18 @@ function validateUploadRef(db, value, user, kinds, { allowEmpty = false, allowAs
   return uploadUrl;
 }
 
+function validateNoticeMarkdownUploads(db, value, user) {
+  const markdown = cleanText(value, 50000);
+  const localImages = [...markdown.matchAll(/!\[[^\]\n]*\]\((\/uploads\/[A-Za-z0-9._-]+)\)/g)].map((match) => match[1]);
+  for (const imageUrl of new Set(localImages)) {
+    validateUploadRef(db, imageUrl, user, ['notice_image'], {
+      mimeTypes: ['image/jpeg','image/png','image/webp'],
+      allowAdminAny: true,
+    });
+  }
+  return markdown;
+}
+
 function resetTeamRegistrations(db, teamId) {
   db.prepare(`UPDATE registrations SET status='pending',rejection_reason='',reviewed_by=NULL,reviewed_at=NULL,updated_at=? WHERE team_id=? AND status<>'pending'`)
     .run(nowIso(), teamId);
@@ -1351,8 +1383,8 @@ function resetTeamRegistrations(db, teamId) {
 
 async function saveUpload(body, uploadDir, user, db) {
   const kind = cleanText(body.kind, 20);
-  if (!['avatar','member','payment','event','notice'].includes(kind)) throw fail(422, '上传用途无效');
-  if (['event','notice'].includes(kind) && user.role !== 'admin') throw fail(403, '只有管理员可以上传赛事文件');
+  if (!['avatar','member','payment','event','notice','notice_image'].includes(kind)) throw fail(422, '上传用途无效');
+  if (['event','notice','notice_image'].includes(kind) && user.role !== 'admin') throw fail(403, '只有管理员可以上传赛事文件');
   const match = /^data:(image\/(?:jpeg|png|webp)|application\/pdf);base64,([A-Za-z0-9+/=]+)$/.exec(body.dataUrl || '');
   if (!match) throw fail(422, '仅支持 JPG、PNG、WebP 图片或 PDF 文件');
   if (kind !== 'notice' && match[1] === 'application/pdf') throw fail(422, '此处只能上传图片');
@@ -1855,11 +1887,12 @@ async function api(req, res, url, appDb, uploadDir) {
     const user=auth(req,appDb,'admin'); const body=await bodyJson(req); const groups=validateEventPayload(body); const refundDeadlineDays=validateRefundDeadlineDays(body.refund_deadline_days); const ts=nowIso();
     const imageUrl=validateUploadRef(db,body.image_url,user,['event'],{allowEmpty:true,allowAssets:true,allowAdminAny:true});
     const noticeUrl=validateUploadRef(db,body.notice_url,user,['notice'],{allowEmpty:true,mimeTypes:['application/pdf'],allowAdminAny:true});
+    const noticeMarkdown=validateNoticeMarkdownUploads(db,body.notice_markdown,user);
     const result=db.prepare(`INSERT INTO events(title,published_at,image_url,description,starts_at,ends_at,contact_name,contact_phone,location,registration_start,registration_end,refund_deadline_days,groups_json,allow_volunteer,allow_spectator,payee,account_no,bank_code,bank_name,notice_url,notice_markdown,status,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(cleanText(body.title,200),body.published_at||ts,imageUrl,cleanText(body.description,3000),body.starts_at,body.ends_at,cleanText(body.contact_name,50),cleanText(body.contact_phone,30),cleanText(body.location,200),body.registration_start,body.registration_end,refundDeadlineDays,JSON.stringify(groups),booleanFlag(body.allow_volunteer)?1:0,booleanFlag(body.allow_spectator)?1:0,cleanText(body.payee,150),cleanText(body.account_no,80),cleanText(body.bank_code,80),cleanText(body.bank_name,150),noticeUrl,cleanText(body.notice_markdown,50000),body.status==='draft'?'draft':'published',user.id,ts,ts); return json(res,201,{message:'赛事已创建',id:Number(result.lastInsertRowid)});
+      .run(cleanText(body.title,200),body.published_at||ts,imageUrl,cleanText(body.description,3000),body.starts_at,body.ends_at,cleanText(body.contact_name,50),cleanText(body.contact_phone,30),cleanText(body.location,200),body.registration_start,body.registration_end,refundDeadlineDays,JSON.stringify(groups),booleanFlag(body.allow_volunteer)?1:0,booleanFlag(body.allow_spectator)?1:0,cleanText(body.payee,150),cleanText(body.account_no,80),cleanText(body.bank_code,80),cleanText(body.bank_name,150),noticeUrl,noticeMarkdown,body.status==='draft'?'draft':'published',user.id,ts,ts); return json(res,201,{message:'赛事已创建',id:Number(result.lastInsertRowid)});
   }
-  if ((params=matchRoute(path,'/api/admin/events/:id')) && method==='PUT') { const user=auth(req,appDb,'admin'); const body=await bodyJson(req); const id=Number(params.id); if(!db.prepare('SELECT 1 FROM events WHERE id=?').get(id)) throw fail(404,'未找到赛事'); const groups=validateEventPayload(body); const refundDeadlineDays=validateRefundDeadlineDays(body.refund_deadline_days); const imageUrl=validateUploadRef(db,body.image_url,user,['event'],{allowEmpty:true,allowAssets:true,allowAdminAny:true}); const noticeUrl=validateUploadRef(db,body.notice_url,user,['notice'],{allowEmpty:true,mimeTypes:['application/pdf'],allowAdminAny:true}); db.prepare(`UPDATE events SET title=?,published_at=?,image_url=?,description=?,starts_at=?,ends_at=?,contact_name=?,contact_phone=?,location=?,registration_start=?,registration_end=?,refund_deadline_days=?,groups_json=?,allow_volunteer=?,allow_spectator=?,payee=?,account_no=?,bank_code=?,bank_name=?,notice_url=?,notice_markdown=?,status=?,updated_at=? WHERE id=?`)
-    .run(cleanText(body.title,200),body.published_at||nowIso(),imageUrl,cleanText(body.description,3000),body.starts_at,body.ends_at,cleanText(body.contact_name,50),cleanText(body.contact_phone,30),cleanText(body.location,200),body.registration_start,body.registration_end,refundDeadlineDays,JSON.stringify(groups),booleanFlag(body.allow_volunteer)?1:0,booleanFlag(body.allow_spectator)?1:0,cleanText(body.payee,150),cleanText(body.account_no,80),cleanText(body.bank_code,80),cleanText(body.bank_name,150),noticeUrl,cleanText(body.notice_markdown,50000),body.status==='draft'?'draft':'published',nowIso(),id); return json(res,200,{message:'赛事已更新'}); }
+  if ((params=matchRoute(path,'/api/admin/events/:id')) && method==='PUT') { const user=auth(req,appDb,'admin'); const body=await bodyJson(req); const id=Number(params.id); if(!db.prepare('SELECT 1 FROM events WHERE id=?').get(id)) throw fail(404,'未找到赛事'); const groups=validateEventPayload(body); const refundDeadlineDays=validateRefundDeadlineDays(body.refund_deadline_days); const imageUrl=validateUploadRef(db,body.image_url,user,['event'],{allowEmpty:true,allowAssets:true,allowAdminAny:true}); const noticeUrl=validateUploadRef(db,body.notice_url,user,['notice'],{allowEmpty:true,mimeTypes:['application/pdf'],allowAdminAny:true}); const noticeMarkdown=validateNoticeMarkdownUploads(db,body.notice_markdown,user); db.prepare(`UPDATE events SET title=?,published_at=?,image_url=?,description=?,starts_at=?,ends_at=?,contact_name=?,contact_phone=?,location=?,registration_start=?,registration_end=?,refund_deadline_days=?,groups_json=?,allow_volunteer=?,allow_spectator=?,payee=?,account_no=?,bank_code=?,bank_name=?,notice_url=?,notice_markdown=?,status=?,updated_at=? WHERE id=?`)
+    .run(cleanText(body.title,200),body.published_at||nowIso(),imageUrl,cleanText(body.description,3000),body.starts_at,body.ends_at,cleanText(body.contact_name,50),cleanText(body.contact_phone,30),cleanText(body.location,200),body.registration_start,body.registration_end,refundDeadlineDays,JSON.stringify(groups),booleanFlag(body.allow_volunteer)?1:0,booleanFlag(body.allow_spectator)?1:0,cleanText(body.payee,150),cleanText(body.account_no,80),cleanText(body.bank_code,80),cleanText(body.bank_name,150),noticeUrl,noticeMarkdown,body.status==='draft'?'draft':'published',nowIso(),id); return json(res,200,{message:'赛事已更新'}); }
   if ((params=matchRoute(path,'/api/admin/events/:id/export')) && method==='GET') {
     auth(req,appDb,'admin');const event=hydrateEvent(db.prepare('SELECT * FROM events WHERE id=?').get(Number(params.id)));if(!event)throw fail(404,'未找到赛事');
     const scope=registrationExportScope(url.searchParams.get('scope'));
@@ -2065,6 +2098,9 @@ async function serveStatic(req, res, url, uploadDir = UPLOAD_DIR, appDb) {
     uploadRecord = appDb?.db.prepare('SELECT * FROM uploads WHERE url=?').get(pathname);
     if (!uploadRecord) throw fail(404, '文件不存在');
     publicUpload = ['event','notice'].includes(uploadRecord.kind) && Boolean(appDb.db.prepare("SELECT 1 FROM events WHERE status='published' AND (image_url=? OR notice_url=?)").get(pathname, pathname));
+    if (!publicUpload && uploadRecord.kind === 'notice_image') {
+      publicUpload = Boolean(appDb.db.prepare("SELECT 1 FROM events WHERE status='published' AND notice_markdown LIKE ?").get(`%${pathname}%`));
+    }
     const user = getSession(req, appDb);
     if (!publicUpload && (!user || (user.role !== 'admin' && user.id !== uploadRecord.owner_user_id))) throw fail(403, '没有权限查看该文件');
   }

@@ -231,20 +231,29 @@ test('管理员赛事管理按未开始、开赛时间、名称与 ID 升序排�
   } finally { await app.close(); }
 });
 
-test('管理员可发布、替换和移除办赛通知 PDF，通知正文允许为空', async () => {
+test('管理员可发布办赛通知正文图片、替换和移除 PDF，通知正文允许为空', async () => {
   const app = await setup();
   const admin = client(app.base);
   const anonymous = client(app.base);
   try {
     await admin.login('admin@ruibude.local', 'Admin123!');
     const pdfData = (label) => `data:application/pdf;base64,${Buffer.from(`%PDF-1.4\n% ${label}\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF`).toString('base64')}`;
+    const tinyPngData = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
     const firstUpload = await admin.request('/api/uploads', { method: 'POST', body: JSON.stringify({ kind: 'notice', dataUrl: pdfData('first notice') }) });
     assert.equal(firstUpload.response.status, 201);
     assert.match(firstUpload.payload.url, /\.pdf$/);
+    const noticeImage = await admin.request('/api/uploads', { method: 'POST', body: JSON.stringify({ kind: 'notice_image', dataUrl: tinyPngData }) });
+    assert.equal(noticeImage.response.status, 201);
+    assert.match(noticeImage.payload.url, /\.png$/);
 
-    const wrongType = await admin.request('/api/uploads', { method: 'POST', body: JSON.stringify({ kind: 'notice', dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=' }) });
+    const privateNoticeImage = await anonymous.request(noticeImage.payload.url);
+    assert.equal(privateNoticeImage.response.status, 403, '未被发布赛事正文引用的通知图片不应公开访问');
+    const wrongType = await admin.request('/api/uploads', { method: 'POST', body: JSON.stringify({ kind: 'notice', dataUrl: tinyPngData }) });
     assert.equal(wrongType.response.status, 422);
     assert.match(wrongType.payload.error, /仅支持 PDF/);
+    const pdfAsNoticeImage = await admin.request('/api/uploads', { method: 'POST', body: JSON.stringify({ kind: 'notice_image', dataUrl: pdfData('wrong notice image') }) });
+    assert.equal(pdfAsNoticeImage.response.status, 422);
+    assert.match(pdfAsNoticeImage.payload.error, /只能上传图片/);
 
     const current = await admin.request('/api/admin/events');
     const template = current.payload.events[0];
@@ -268,17 +277,23 @@ test('管理员可发布、替换和移除办赛通知 PDF，通知正文允许�
     const secondUpload = await admin.request('/api/uploads', { method: 'POST', body: JSON.stringify({ kind: 'notice', dataUrl: pdfData('replacement notice') }) });
     assert.equal(secondUpload.response.status, 201);
     const editable = (await admin.request('/api/admin/events')).payload.events.find((event) => event.id === created.payload.id);
-    const replaced = await admin.request(`/api/admin/events/${created.payload.id}`, { method: 'PUT', body: JSON.stringify({ ...editable, notice_markdown: '# 补充通知正文', notice_url: secondUpload.payload.url }) });
+    const noticeMarkdownWithImage = `# 补充通知正文\n\n![付款码](${noticeImage.payload.url})`;
+    const replaced = await admin.request(`/api/admin/events/${created.payload.id}`, { method: 'PUT', body: JSON.stringify({ ...editable, notice_markdown: noticeMarkdownWithImage, notice_url: secondUpload.payload.url }) });
     assert.equal(replaced.response.status, 200);
     publicEvent = await anonymous.request(`/api/events/${created.payload.id}`);
-    assert.equal(publicEvent.payload.event.notice_markdown, '# 补充通知正文');
+    assert.equal(publicEvent.payload.event.notice_markdown, noticeMarkdownWithImage);
     assert.equal(publicEvent.payload.event.notice_url, secondUpload.payload.url);
+    const publicNoticeImage = await anonymous.request(noticeImage.payload.url);
+    assert.equal(publicNoticeImage.response.status, 200);
+    assert.match(publicNoticeImage.response.headers.get('content-type'), /image\/png/);
 
     const removed = await admin.request(`/api/admin/events/${created.payload.id}`, { method: 'PUT', body: JSON.stringify({ ...publicEvent.payload.event, notice_url: '', notice_markdown: '# 仅保留正文' }) });
     assert.equal(removed.response.status, 200);
     publicEvent = await anonymous.request(`/api/events/${created.payload.id}`);
     assert.equal(publicEvent.payload.event.notice_url, '');
     assert.equal(publicEvent.payload.event.notice_markdown, '# 仅保留正文');
+    const hiddenAgain = await anonymous.request(noticeImage.payload.url);
+    assert.equal(hiddenAgain.response.status, 403, '正文不再引用后通知图片不应继续公开');
   } finally { await app.close(); }
 });
 
