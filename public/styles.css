@@ -333,7 +333,7 @@ svg { flex: 0 0 auto; }
 .markdown-body pre { margin: 20px 0; padding: 16px; overflow-x: auto; border: 1px solid var(--border-light); border-radius: 3px; background: #f5f5f3; }
 .markdown-body pre code { padding: 0; border: 0; color: #30343a; background: transparent; }
 .markdown-body a { color: var(--primary); }
-.markdown-body img { display: block; width: auto; max-width: min(100%, 900px); height: auto; margin: 20px auto; border: 1px solid var(--border-light); border-radius: 3px; background: #fff; }
+.markdown-body img { display: block; width: auto; max-width: min(100%, 900px); height: auto; margin: 20px auto; border: 0; border-radius: 0; background: transparent; }
 .markdown-table-wrap { margin: 20px 0; overflow-x: auto; border: 1px solid var(--border-light); border-radius: 3px; }
 .markdown-table-wrap table { width: 100%; border-collapse: collapse; background: #fff; }
 .markdown-table-wrap th, .markdown-table-wrap td { min-width: 120px; padding: 11px 13px; border-right: 1px solid var(--border-light); border-bottom: 1px solid var(--border-light); text-align: left; vertical-align: top; }
@@ -356,7 +356,7 @@ svg { flex: 0 0 auto; }
 .markdown-visual-editor th,
 .markdown-visual-editor td { min-width: 120px; padding: 11px 13px; border: 1px solid var(--border-light); text-align: left; vertical-align: top; }
 .markdown-visual-editor th { background: #f1f1ef; font-weight: 650; }
-.markdown-visual-editor img { margin: 18px auto; border: 1px solid var(--border-light); border-radius: 3px; background: #fff; box-shadow: 0 4px 18px rgba(15, 23, 42, .08); }
+.markdown-visual-editor img { margin: 18px auto; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .markdown-visual-editor.uploading { cursor: progress; }
 
 .card { background: #fff; border: 1px solid var(--border-light); border-radius: 4px; }

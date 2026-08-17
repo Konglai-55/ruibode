@@ -614,6 +614,14 @@ const visualEditorValid = await visualEditor.getAttribute('contenteditable') ===
   && await visualEditor.locator('table').count() === 1
   && await visualEditor.locator('strong, b').first().textContent() === '请各参赛单位'
   && await visualEditor.locator('img').count() === 1;
+const visualEditorImageBorderless = await visualEditor.locator('img').first().evaluate((image) => {
+  const style = getComputedStyle(image);
+  return style.borderTopWidth === '0px'
+    && style.borderRightWidth === '0px'
+    && style.borderBottomWidth === '0px'
+    && style.borderLeftWidth === '0px'
+    && style.boxShadow === 'none';
+});
 const visualTableStyled = await visualEditor.locator('table').evaluate((table) => {
   const cell = table.querySelector('td');
   return getComputedStyle(table).borderCollapse === 'collapse'
@@ -634,7 +642,7 @@ const uploadedNoticeUrl = await adminPage.locator('input[name="notice_url"]').in
 const noticePdfPreviewVisible = await adminPage.getByText('已上传办赛通知 PDF', { exact: true }).isVisible();
 const noticeRemoveVisible = await adminPage.getByRole('button', { name: '移除 PDF', exact: true }).isVisible();
 await adminPage.screenshot({ path: `${output}/desktop-admin-event-markdown.png`, fullPage: true });
-checks.push({ profile: 'admin-event-markdown', toolbarButtons, visualEditorValid, visualTableStyled, markdownStorageValid, sourceEditorRemoved, markdownWordingRemoved, noticeBodyOptional, noticePdfAccept, noticePdfPreviewVisible, noticeRemoveVisible, valid: toolbarButtons === 11 && visualEditorValid && visualTableStyled && markdownStorageValid && sourceEditorRemoved && markdownWordingRemoved && noticeBodyOptional && noticePdfAccept === 'application/pdf' && noticePdfPreviewVisible && noticeRemoveVisible });
+checks.push({ profile: 'admin-event-markdown', toolbarButtons, visualEditorValid, visualEditorImageBorderless, visualTableStyled, markdownStorageValid, sourceEditorRemoved, markdownWordingRemoved, noticeBodyOptional, noticePdfAccept, noticePdfPreviewVisible, noticeRemoveVisible, valid: toolbarButtons === 11 && visualEditorValid && visualEditorImageBorderless && visualTableStyled && markdownStorageValid && sourceEditorRemoved && markdownWordingRemoved && noticeBodyOptional && noticePdfAccept === 'application/pdf' && noticePdfPreviewVisible && noticeRemoveVisible });
 await adminPage.getByRole('button', { name: '移除 PDF', exact: true }).click();
 const noticeRemovalValid = await adminPage.locator('input[name="notice_url"]').inputValue() === ''
   && await adminPage.locator('[data-preview="notice_url"]').getByText('尚未上传', { exact: true }).isVisible();
@@ -648,8 +656,15 @@ await adminPage.goto(`${base}/#/events/${noticeEvent.id}?notice=image`, { waitUn
 await adminPage.locator('.notice-markdown img').waitFor({ state: 'visible' });
 const noticeImageAssetResponse = await adminContext.request.get(`${base}${noticeImageUrl}`);
 const noticeImageVisible = await adminPage.locator('.notice-markdown img').first().evaluate((image) => image.complete && image.naturalWidth > 0);
+const noticeImageBorderless = await adminPage.locator('.notice-markdown img').first().evaluate((image) => {
+  const style = getComputedStyle(image);
+  return style.borderTopWidth === '0px'
+    && style.borderRightWidth === '0px'
+    && style.borderBottomWidth === '0px'
+    && style.borderLeftWidth === '0px';
+});
 const noticeImageOverflow = await adminPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
-checks.push({ profile: 'event-notice-image', noticeImageUrl, contentType: noticeImageAssetResponse.headers()['content-type'], visible: noticeImageVisible, overflow: noticeImageOverflow, valid: noticeImageUrl?.startsWith('/uploads/notice_image-') && noticeImageAssetResponse.ok() && noticeImageAssetResponse.headers()['content-type']?.startsWith('image/png') && noticeImageVisible && !noticeImageOverflow });
+checks.push({ profile: 'event-notice-image', noticeImageUrl, contentType: noticeImageAssetResponse.headers()['content-type'], visible: noticeImageVisible, borderless: noticeImageBorderless, overflow: noticeImageOverflow, valid: noticeImageUrl?.startsWith('/uploads/notice_image-') && noticeImageAssetResponse.ok() && noticeImageAssetResponse.headers()['content-type']?.startsWith('image/png') && noticeImageVisible && noticeImageBorderless && !noticeImageOverflow });
 const noticeAttachResponse = await adminContext.request.put(`${base}/api/admin/events/${noticeEvent.id}`, { headers: { 'X-CSRF-Token': adminAuth.csrfToken }, data: { ...noticeEvent, notice_markdown: '', notice_url: uploadedNoticeUrl } });
 if (!noticeAttachResponse.ok()) throw new Error(`Notice PDF attach failed: ${noticeAttachResponse.status()} ${await noticeAttachResponse.text()}`);
 const noticePdfAssetResponse = await adminContext.request.get(`${base}${uploadedNoticeUrl}`);
