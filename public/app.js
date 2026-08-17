@@ -712,6 +712,8 @@ function setHomeSlide(index) {
     const selected = slideIndex === active;
     slide.classList.toggle('is-active', selected);
     slide.setAttribute('aria-hidden', String(!selected));
+    const link = $('a', slide);
+    if (link) link.tabIndex = selected ? 0 : -1;
   });
   dots.forEach((dot, dotIndex) => {
     const selected = dotIndex === active;
@@ -730,12 +732,21 @@ function startHomeCarousel() {
 }
 
 function homePage() {
+  const droneVideoUrl = '/assets/home/drone-competition.mp4';
+  const recfUrl = 'https://recf.org/';
+  const robotVexBannerUrl = 'http://robotvex.com/';
+  const robotVexUrl = 'http://www.robotvex.com/';
+  const codingUrl = 'https://coding.qq.com/home/';
+  const externalLinkAttrs = (href) => `href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer"`;
+  const heroLinkAttrs = (slide) => slide.scrollTarget
+    ? `href="#${escapeHtml(slide.scrollTarget)}" data-action="scroll-home-programs" data-target="${escapeHtml(slide.scrollTarget)}"`
+    : externalLinkAttrs(slide.href);
   const heroSlides = [
-    ['hero-recf.png', 'RECF 赛事品牌展示'],
-    ['hero-vex.jpg', '机器人竞赛现场展示'],
-    ['hero-robotvex.png', 'Robot VEX 项目展示'],
-    ['hero-robots-1.jpg', '青少年机器人实践展示'],
-    ['hero-robots-2.jpg', '机器人教育活动展示'],
+    { file: 'hero-recf.png', alt: 'RECF 赛事品牌展示', href: recfUrl },
+    { file: 'hero-vex.jpg', alt: '机器人竞赛现场展示', scrollTarget: 'home-programs' },
+    { file: 'hero-robotvex.png', alt: 'Robot VEX 项目展示', href: robotVexBannerUrl },
+    { file: 'hero-robots-1.jpg', alt: '无人机竞赛视频展示', href: droneVideoUrl },
+    { file: 'hero-robots-2.jpg', alt: '无人机竞赛视频展示', href: droneVideoUrl },
   ];
   const programLogos = [
     ['program-engage.png', 'RECF Engage Robotics Competition'],
@@ -743,20 +754,20 @@ function homePage() {
     ['program-inspire.png', 'RECF Inspire Robotics Competition'],
   ];
   const platformLogos = [
-    ['program-vex-iq.png', 'VEX IQ 项目'],
-    ['program-vex-v5.png', 'VEX V5 项目'],
+    ['program-vex-iq.png', 'Aerial Drone Competition'],
+    ['program-vex-v5.png', 'Aerial Drone Competition PRO'],
   ];
   const partnerCards = [
-    ['partner-card-6.png', '合作伙伴展示 6'],
-    ['partner-card-4.png', '合作伙伴展示 4'],
-    ['partner-card-5.png', '合作伙伴展示 5'],
-    ['partner-card-2.png', '合作伙伴展示 2'],
-    ['partner-card-1.png', '合作伙伴展示 1'],
-    ['partner-card-recf.png', 'RECF 合作伙伴展示'],
+    { file: 'partner-card-6.png', alt: 'RECF 合作伙伴展示', href: recfUrl },
+    { file: 'partner-card-4.png', alt: '腾讯扣叮合作伙伴展示', href: codingUrl },
+    { file: 'partner-card-5.png', alt: '上海瑞卜德合作伙伴展示', href: robotVexUrl },
+    { file: 'partner-card-2.png', alt: 'RECF 合作伙伴展示', href: recfUrl },
+    { file: 'partner-card-1.png', alt: '腾讯扣叮合作伙伴展示', href: codingUrl },
+    { file: 'partner-card-recf.png', alt: '上海瑞卜德合作伙伴展示', href: robotVexUrl },
   ];
   app.innerHTML = `<section class="home-page" aria-label="上海瑞卜德教育首页">
     <div class="home-hero" aria-label="首页轮播图">
-      <div class="home-hero-slides">${heroSlides.map(([file, alt], index) => `<figure class="home-hero-slide ${index === 0 ? 'is-active' : ''}" aria-hidden="${index === 0 ? 'false' : 'true'}"><img src="/assets/home/${file}" alt="${escapeHtml(alt)}" width="1920" height="720"${index === 0 ? ' loading="eager"' : ' loading="lazy"'}></figure>`).join('')}</div>
+      <div class="home-hero-slides">${heroSlides.map((slide, index) => `<figure class="home-hero-slide ${index === 0 ? 'is-active' : ''}" aria-hidden="${index === 0 ? 'false' : 'true'}"><a class="home-hero-link" ${heroLinkAttrs(slide)} aria-label="${escapeHtml(slide.alt)}"><img src="/assets/home/${slide.file}" alt="${escapeHtml(slide.alt)}" width="1920" height="720"${index === 0 ? ' loading="eager"' : ' loading="lazy"'}></a></figure>`).join('')}</div>
       <div class="home-hero-dots" aria-label="首页轮播图切换">${heroSlides.map((_, index) => `<button class="${index === 0 ? 'active' : ''}" type="button" data-action="home-slide" data-slide-index="${index}" aria-label="显示第 ${index + 1} 张首页轮播图" aria-current="${index === 0 ? 'true' : 'false'}"></button>`).join('')}</div>
     </div>
     <div class="home-block home-intro-block">
@@ -772,22 +783,22 @@ function homePage() {
     </div>
     <div class="home-block">
       <div class="container">
-        <div class="home-blue-panel home-program-panel">
+        <div class="home-blue-panel home-program-panel" id="home-programs">
           <h2>竞赛类目</h2>
           <div class="home-program-logos">${programLogos.map(([file, alt]) => `<a href="#/rules" aria-label="查看 ${escapeHtml(alt)} 规则"><img src="/assets/home/${file}" alt="${escapeHtml(alt)}" width="272" height="88" loading="lazy"></a>`).join('')}</div>
-          <div class="home-platform-logos">${platformLogos.map(([file, alt]) => `<a href="#/rules" aria-label="查看 ${escapeHtml(alt)} 相关规则"><img src="/assets/home/${file}" alt="${escapeHtml(alt)}" width="444" height="116" loading="lazy"></a>`).join('')}</div>
+          <div class="home-platform-logos">${platformLogos.map(([file, alt]) => `<a ${externalLinkAttrs(droneVideoUrl)} aria-label="打开 ${escapeHtml(alt)} 视频"><img src="/assets/home/${file}" alt="${escapeHtml(alt)}" width="444" height="116" loading="lazy"></a>`).join('')}</div>
         </div>
       </div>
     </div>
     <div class="home-block home-partner-block">
       <div class="container">
         <div class="home-partner-head"><h2>合作伙伴</h2></div>
-        <div class="home-partner-grid">${partnerCards.map(([file, alt]) => `<img src="/assets/home/${file}" alt="${escapeHtml(alt)}" width="369" height="369">`).join('')}</div>
+        <div class="home-partner-grid">${partnerCards.map(({ file, alt, href }) => `<a ${externalLinkAttrs(href)} aria-label="访问 ${escapeHtml(alt)}"><img src="/assets/home/${file}" alt="${escapeHtml(alt)}" width="369" height="369"></a>`).join('')}</div>
       </div>
     </div>
     <div class="home-link-band">
       <div class="container home-link-band-inner">
-        <img class="home-link-logo" src="/assets/home/partner-recf.png" alt="RECF" width="267" height="217">
+        <a class="home-link-logo-link" ${externalLinkAttrs(recfUrl)} aria-label="访问 RECF 官网"><img class="home-link-logo" src="/assets/home/partner-recf.png" alt="RECF" width="267" height="217"></a>
         <nav class="home-link-list" aria-label="首页快捷入口">
           <a href="#/about">关于我们</a>
           <a href="#/about">团队</a>
@@ -795,7 +806,7 @@ function homePage() {
           <a href="#/volunteer">志愿者</a>
           <a href="#/rules">资源库</a>
         </nav>
-        <img class="home-link-logo home-link-logo-round" src="/assets/home/partner-robotvex.jpg" alt="Robot VEX" width="282" height="282">
+        <a class="home-link-logo-link" ${externalLinkAttrs(robotVexUrl)} aria-label="访问 Robot VEX 官网"><img class="home-link-logo home-link-logo-round" src="/assets/home/partner-robotvex.jpg" alt="Robot VEX" width="282" height="282"></a>
       </div>
     </div>
   </section>`;
@@ -1700,6 +1711,7 @@ document.addEventListener('click',async(event)=>{
   if(action==='back-to-top'){window.scrollTo({top:0,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
   if(action==='toggle-mobile-menu'){const drawer=$('.mobile-drawer',header);drawer.classList.toggle('open');const open=drawer.classList.contains('open');target.setAttribute('aria-expanded',String(open));target.setAttribute('aria-label',open?'关闭导航菜单':'打开导航菜单');}
   if(action==='home-slide'){event.preventDefault();setHomeSlide(Number(target.dataset.slideIndex));startHomeCarousel();}
+  if(action==='scroll-home-programs'){event.preventDefault();document.getElementById(target.dataset.target)?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});}
   if(action==='toggle-activity-menu'){const menu=target.closest('.activity-menu');const open=!menu.classList.contains('open');const userMenu=$('.user-menu',header);userMenu?.classList.remove('open');userMenu?.querySelector('.user-menu-button')?.setAttribute('aria-expanded','false');menu.classList.toggle('open',open);menu.classList.toggle('suppress-hover',!open);target.setAttribute('aria-expanded',String(open));}
   if(action==='toggle-user-menu'){const menu=target.closest('.user-menu');menu.classList.toggle('open');target.setAttribute('aria-expanded',String(menu.classList.contains('open')));}
   if(action==='scroll-rule'){event.preventDefault();document.getElementById(target.dataset.target)?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});}

@@ -53,6 +53,7 @@ const MIME_TYPES = {
   '.jpeg': 'image/jpeg',
   '.webp': 'image/webp',
   '.pdf': 'application/pdf',
+  '.mp4': 'video/mp4',
 };
 
 const json = (res, status, payload, headers = {}) => {
