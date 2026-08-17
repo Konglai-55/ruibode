@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
-import { activityApplicationReviewEmailPayload, createApplication, registrationReviewEmailPayload, verificationCodeEmailPayload } from '../server.mjs';
+import { PLATFORM_NAME, activityApplicationReviewEmailPayload, createApplication, registrationReviewEmailPayload, verificationCodeEmailPayload } from '../server.mjs';
 
 process.env.NODE_ENV = 'test';
 
@@ -408,6 +408,8 @@ test('管理员可查看完整报名资料并通过审核', async () => {
     const approvedMail = registrationReviewEmailPayload({ event_title: event.title, starts_at: event.starts_at, ends_at: event.ends_at, location: event.location, team_number: teams.teams[0].number, team_name: teams.teams[0].name, group_name: teams.teams[0].group_name }, 'approved');
     assert.ok(approvedMail.text.includes(`Your team, ${teams.teams[0].number}, application to the competition ${event.title} has been approved.`));
     assert.ok(approvedMail.html.includes(`Your team, ${teams.teams[0].number}, application to the competition ${event.title} has been approved.`));
+    assert.ok(approvedMail.text.includes(PLATFORM_NAME));
+    assert.ok(approvedMail.html.includes(PLATFORM_NAME));
     const approvedExport = await admin.request(`/api/admin/events/${event.id}/export?scope=approved`);
     assert.equal(approvedExport.response.status, 200);
     assert.equal(approvedExport.response.headers.get('x-export-scope'), 'approved');
@@ -425,6 +427,7 @@ test('管理员可查看完整报名资料并通过审核', async () => {
     const rejectedMail = registrationReviewEmailPayload({ event_title: event.title, starts_at: event.starts_at, ends_at: event.ends_at, location: event.location, team_number: teams.teams[0].number, team_name: teams.teams[0].name, group_name: teams.teams[0].group_name, rejection_reason: '复核后发现付款凭证不清晰' }, 'rejected');
     assert.match(rejectedMail.subject, /赛事报名未通过/);
     assert.ok(rejectedMail.text.includes(`Your team, ${teams.teams[0].number}, application to the competition ${event.title} has not been approved.`));
+    assert.ok(rejectedMail.text.includes(`Please log in to ${PLATFORM_NAME} to view the status`));
     assert.ok(!rejectedMail.text.includes('复核后发现付款凭证不清晰'), '驳回邮件正文不得包含后台驳回原因');
     assert.ok(!rejectedMail.html.includes('复核后发现付款凭证不清晰'), '驳回邮件 HTML 不得包含后台驳回原因');
     const changedBackToApproved = await admin.request(`/api/admin/registrations/${created.payload.id}/review`, { method: 'POST', body: JSON.stringify({ status: 'approved' }) });
@@ -607,11 +610,13 @@ test('志愿者与观赛报名可提交、查询、修改并由管理员审核',
     assert.equal(approved.response.status, 200);
     const volunteerApprovedMail = activityApplicationReviewEmailPayload({ ...volunteerData, event_title: event.title, starts_at: event.starts_at, ends_at: event.ends_at, location: event.location }, 'approved');
     assert.ok(volunteerApprovedMail.text.includes(`Your volunteer registration application to the competition ${event.title} has been approved.`));
+    assert.ok(volunteerApprovedMail.text.includes(PLATFORM_NAME));
     const rejected = await admin.request(`/api/admin/activity-applications/${spectator.payload.id}/review`, { method: 'POST', body: JSON.stringify({ status: 'rejected', reason: '请补充同行人员信息' }) });
     assert.equal(rejected.response.status, 200);
     const spectatorRejectMail = activityApplicationReviewEmailPayload({ ...spectatorData, event_title: event.title, starts_at: event.starts_at, ends_at: event.ends_at, location: event.location, rejection_reason: '请补充同行人员信息' }, 'rejected');
     assert.match(spectatorRejectMail.subject, /观赛报名未通过/);
     assert.ok(spectatorRejectMail.text.includes(`Your spectator registration application to the competition ${event.title} has not been approved.`));
+    assert.ok(spectatorRejectMail.text.includes(`Please log in to ${PLATFORM_NAME} to view the status`));
     assert.ok(!spectatorRejectMail.text.includes('请补充同行人员信息'), '活动报名驳回邮件正文不得包含后台驳回原因');
     assert.ok(!spectatorRejectMail.html.includes('请补充同行人员信息'), '活动报名驳回邮件 HTML 不得包含后台驳回原因');
 

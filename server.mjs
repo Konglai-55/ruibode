@@ -69,6 +69,7 @@ const validPhone = (phone) => !phone || /^[+\d\s()-]{6,24}$/.test(phone);
 const validUsername = (username) => /^[\p{L}\p{N}_-]{2,32}$/u.test(username);
 const booleanFlag = (value) => value === true || value === 1 || value === '1' || value === 'true';
 const htmlEscape = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+export const PLATFORM_NAME = '美国机器人教育与竞赛基金会（RECF）授权上海瑞卜德教育科技有限公司赛事报名平台';
 const TEAM_NUMBER_MAX_LENGTH = 30;
 const REFUND_REQUEST_MAX_COUNT = 2;
 const TEAM_NUMBER_FORMAT_MESSAGE = '请输入 1–30 个 ASCII 字符，不可包含空格或中文';
@@ -251,7 +252,7 @@ async function sendSmtpEmail({ to, subject, text, html }) {
   const user = cleanText(process.env.SMTP_USER, 200);
   const password = String(process.env.SMTP_PASS || '');
   const fromAddress = smtpAddress(process.env.SMTP_FROM, user);
-  const fromName = cleanText(process.env.SMTP_FROM_NAME || '上海瑞卜德教育赛事报名平台', 100);
+  const fromName = cleanText(process.env.SMTP_FROM_NAME || PLATFORM_NAME, 100);
   if (!host || !Number.isInteger(port) || port < 1 || port > 65535 || !validEmail(user) || !password || !validEmail(fromAddress)) {
     throw fail(503, 'SMTP 邮件配置不完整');
   }
@@ -922,10 +923,10 @@ export function registrationReviewEmailPayload(registration, status) {
   const teamId = cleanText(registration?.team_number || teamLabel, 120);
   const actionText = approved
     ? '您负责的战队报名已通过审核。'
-    : '您负责的战队报名未通过审核，请登录报名平台查看审核状态，并按页面提示修改资料后重新提交。';
+    : `您负责的战队报名未通过审核，请登录${PLATFORM_NAME}查看审核状态，并按页面提示修改资料后重新提交。`;
   const actionTextEn = approved
     ? `Your team, ${teamId}, application to the competition ${eventTitle} has been approved.`
-    : `Your team, ${teamId}, application to the competition ${eventTitle} has not been approved. Please log in to the registration platform to view the status and update the application as instructed.`;
+    : `Your team, ${teamId}, application to the competition ${eventTitle} has not been approved. Please log in to ${PLATFORM_NAME} to view the status and update the application as instructed.`;
   const eventTime = [emailDateTime(registration?.starts_at), emailDateTime(registration?.ends_at)].filter(Boolean).join(' — ');
   const rows = [
     ['赛事', eventTitle],
@@ -942,12 +943,12 @@ export function registrationReviewEmailPayload(registration, status) {
     '',
     ...rows.map(([label, value]) => `${label}：${value}`),
     '',
-    '请关注平台中的后续赛事通知。',
+    `请关注${PLATFORM_NAME}中的后续赛事通知。`,
     '',
-    '上海瑞卜德教育赛事报名平台',
+    PLATFORM_NAME,
   ].join('\n');
   const htmlRows = rows.map(([label, value]) => `<tr><th align="left" style="padding:6px 10px;border:1px solid #e5e7eb;background:#f8fafc;">${htmlEscape(label)}</th><td style="padding:6px 10px;border:1px solid #e5e7eb;">${htmlEscape(value)}</td></tr>`).join('');
-  const html = `<p>各位教练：</p><p>${htmlEscape(actionText)}<br>${htmlEscape(actionTextEn)}</p><table cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin:12px 0;">${htmlRows}</table><p>请关注平台中的后续赛事通知。</p><p>上海瑞卜德教育赛事报名平台</p>`;
+  const html = `<p>各位教练：</p><p>${htmlEscape(actionText)}<br>${htmlEscape(actionTextEn)}</p><table cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin:12px 0;">${htmlRows}</table><p>请关注${htmlEscape(PLATFORM_NAME)}中的后续赛事通知。</p><p>${htmlEscape(PLATFORM_NAME)}</p>`;
   return {
     subject: `【赛事报名${approved ? '成功' : '未通过'}】${teamLabel}`,
     text,
@@ -991,10 +992,10 @@ export function activityApplicationReviewEmailPayload(application, status) {
   const eventTitle = cleanText(application?.event_title || '赛事', 200);
   const actionText = approved
     ? `您的${typeLabel}已通过审核。`
-    : `您的${typeLabel}未通过审核，请登录报名平台查看审核状态，并按页面提示修改资料后重新提交。`;
+    : `您的${typeLabel}未通过审核，请登录${PLATFORM_NAME}查看审核状态，并按页面提示修改资料后重新提交。`;
   const actionTextEn = approved
     ? `Your ${typeLabelEn} application to the competition ${eventTitle} has been approved.`
-    : `Your ${typeLabelEn} application to the competition ${eventTitle} has not been approved. Please log in to the registration platform to view the status and update the application as instructed.`;
+    : `Your ${typeLabelEn} application to the competition ${eventTitle} has not been approved. Please log in to ${PLATFORM_NAME} to view the status and update the application as instructed.`;
   const eventTime = [emailDateTime(application?.starts_at), emailDateTime(application?.ends_at)].filter(Boolean).join(' — ');
   const contentRow = application?.type === 'volunteer'
     ? ['意向岗位', application?.volunteer_role || '—']
@@ -1015,12 +1016,12 @@ export function activityApplicationReviewEmailPayload(application, status) {
     '',
     ...rows.map(([label, value]) => `${label}：${value}`),
     '',
-    '请关注平台中的后续赛事通知。',
+    `请关注${PLATFORM_NAME}中的后续赛事通知。`,
     '',
-    '上海瑞卜德教育赛事报名平台',
+    PLATFORM_NAME,
   ].join('\n');
   const htmlRows = rows.map(([label, value]) => `<tr><th align="left" style="padding:6px 10px;border:1px solid #e5e7eb;background:#f8fafc;">${htmlEscape(label)}</th><td style="padding:6px 10px;border:1px solid #e5e7eb;">${htmlEscape(value)}</td></tr>`).join('');
-  const html = `<p>您好：</p><p>${htmlEscape(actionText)}<br>${htmlEscape(actionTextEn)}</p><table cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin:12px 0;">${htmlRows}</table><p>请关注平台中的后续赛事通知。</p><p>上海瑞卜德教育赛事报名平台</p>`;
+  const html = `<p>您好：</p><p>${htmlEscape(actionText)}<br>${htmlEscape(actionTextEn)}</p><table cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin:12px 0;">${htmlRows}</table><p>请关注${htmlEscape(PLATFORM_NAME)}中的后续赛事通知。</p><p>${htmlEscape(PLATFORM_NAME)}</p>`;
   return {
     subject: `【${typeLabel}${approved ? '通过' : '未通过'}】${eventTitle}`,
     text,
@@ -1419,7 +1420,7 @@ async function api(req, res, url, appDb, uploadDir) {
     const code = String(randomInt(100000, 1000000));
     db.prepare('INSERT INTO verification_codes(email,code_hash,expires_at,created_at) VALUES(?,?,?,?)')
       .run(email, sha256(code), new Date(Date.now() + 10 * 60_000).toISOString(), nowIso());
-    await sendEmailMessage({ to: email, subject: '上海瑞卜德教育赛事报名平台注册验证码', ...verificationCodeEmailPayload(code) });
+    await sendEmailMessage({ to: email, subject: `${PLATFORM_NAME}注册验证码`, ...verificationCodeEmailPayload(code) });
     return json(res, 200, { message: '验证码已发送，请在 10 分钟内完成验证', ...(shouldExposeEmailDevCode() ? { devCode: code } : {}) });
   }
 
@@ -1471,7 +1472,7 @@ async function api(req, res, url, appDb, uploadDir) {
       try {
         await sendEmailMessage({
           to: email,
-          subject: '上海瑞卜德教育赛事报名平台密码重置验证码',
+          subject: `${PLATFORM_NAME}密码重置验证码`,
           ...verificationCodeEmailPayload(code),
         });
       } catch (error) {
@@ -2127,5 +2128,5 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const { server } = await createApplication();
   const port = Number(process.env.PORT || 3000);
   const host = process.env.HOST || '0.0.0.0';
-server.listen(port, host, () => console.log(`上海瑞卜德教育赛事报名平台已启动：http://${host}:${port}`));
+server.listen(port, host, () => console.log(`${PLATFORM_NAME}已启动：http://${host}:${port}`));
 }
