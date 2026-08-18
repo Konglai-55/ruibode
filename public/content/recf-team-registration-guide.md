@@ -84,4 +84,4 @@
 
 ## 联系技术支持
 
-如果您遇到任何问题或有任何疑问，请联系上海瑞卜德教育科技有限公司（小周老师：13761383714，邮箱：654849662@qq.com) 或发送电子邮件至 [Accounting@recf.org](mailto:Accounting@recf.org)。
+如果您遇到任何问题或有任何疑问，请联系上海瑞卜德教育科技有限公司（小周老师：13761393714，邮箱：654849662@qq.com）或发送电子邮件至 [Accounting@recf.org](mailto:Accounting@recf.org)。

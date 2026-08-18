@@ -37,6 +37,8 @@ const DEFAULT_TEAM_GROUPS = Object.freeze([
   'RECF-Inspire 创新大学组',
 ]);
 const TEAM_NUMBER_MAX_LENGTH = 30;
+const REGISTRATION_DRAFT_KEY = 'ruibude-registration-draft-v1';
+const AUTH_VERIFICATION_TTL_MS = 10 * 60_000;
 const TEAM_NUMBER_FORMAT_MESSAGE = '请输入 1–30 个 ASCII 字符，不可包含空格或中文';
 const DUPLICATE_REGISTRATION_MESSAGE = '该战队已报名此赛事';
 const CANCELLED_REGISTRATION_REAPPLY_MESSAGE = '您的赛队已取消参赛，若要重新参赛，请于右上角下拉栏 -> 我的比赛 -> 对应比赛打开列表 -> 重新申请参赛';
@@ -733,7 +735,6 @@ function startHomeCarousel() {
 
 function homePage() {
   const droneVideoUrl = '/assets/home/drone-competition.mp4';
-  const recfUrl = 'https://recf.org/';
   const recfPartnerUrl = 'https://recf.org/about-us/our-partners/';
   const robotVexBannerUrl = 'http://robotvex.com/';
   const robotVexUrl = 'http://www.robotvex.com/';
@@ -743,7 +744,7 @@ function homePage() {
     ? `href="#${escapeHtml(slide.scrollTarget)}" data-action="scroll-home-programs" data-target="${escapeHtml(slide.scrollTarget)}"`
     : externalLinkAttrs(slide.href);
   const heroSlides = [
-    { file: 'hero-recf.png', alt: 'RECF 赛事品牌展示', href: recfUrl },
+    { file: 'hero-recf.png', alt: 'RECF 赛事品牌展示', href: recfPartnerUrl },
     { file: 'hero-vex.jpg', alt: '机器人竞赛现场展示', scrollTarget: 'home-programs' },
     { file: 'hero-robotvex.png', alt: 'Robot VEX 项目展示', href: robotVexBannerUrl },
     { file: 'hero-robots-1.jpg', alt: '无人机竞赛视频展示', href: droneVideoUrl },
@@ -1015,10 +1016,11 @@ async function viewActivityApplication(id, admin = false) {
   openModal(`${config.title}详情`,`<div class="detail-section"><h3>申请信息</h3>${detailRows([...common,...specific])}</div>`,footer,'wide');
 }
 
-async function refreshCaptcha() {
+async function refreshCaptcha(root = document, clearAnswer = true) {
   state.captcha = await apiFetch('/api/captcha');
-  const img = $('[data-captcha-image]'); if (img) img.src = state.captcha.svg;
-  const id = $('[name=captchaId]'); if (id) id.value = state.captcha.id;
+  const img = $('[data-captcha-image]', root); if (img) img.src = state.captcha.svg;
+  const id = $('[name=captchaId]', root); if (id) id.value = state.captcha.id;
+  const answer = $('[name=captcha]', root); if (answer && clearAnswer) answer.value = '';
 }
 
 function passwordField(name, label, autocomplete) {
@@ -1026,7 +1028,30 @@ function passwordField(name, label, autocomplete) {
 }
 
 function captchaField() {
-  return `<div class="form-field"><label for="captcha">图形验证码<span class="required" aria-hidden="true">*</span></label><input type="hidden" name="captchaId"><div class="input-combo"><input class="form-control" id="captcha" name="captcha" required maxlength="4" autocomplete="off" placeholder="请输入 4 位验证码"><img class="captcha-image" data-captcha-image data-action="refresh-captcha" src="" alt="图形验证码，点击可刷新" title="点击刷新"></div><p class="field-error" data-error="captcha" role="alert"></p></div>`;
+  return `<div class="form-field" data-captcha-field><label for="captcha">图形验证码<span class="required" aria-hidden="true">*</span></label><input type="hidden" name="captchaId"><div class="input-combo"><input class="form-control" id="captcha" name="captcha" required maxlength="4" autocomplete="off" placeholder="请输入 4 位验证码"><img class="captcha-image" data-captcha-image data-action="refresh-captcha" src="" alt="图形验证码，点击可刷新" title="点击刷新"></div><p class="helper">图形验证码有效期 10 分钟，点击图片可刷新。</p><p class="field-error" data-error="captcha" role="alert"></p></div>`;
+}
+
+function readRegistrationDraft() {
+  try {
+    const draft=JSON.parse(sessionStorage.getItem(REGISTRATION_DRAFT_KEY)||'{}');
+    if(draft.codeSentAt && Date.now()-Number(draft.codeSentAt)>=AUTH_VERIFICATION_TTL_MS){delete draft.code;delete draft.codeSentAt;delete draft.codeSentEmail;sessionStorage.setItem(REGISTRATION_DRAFT_KEY,JSON.stringify(draft));}
+    return draft;
+  } catch { return {}; }
+}
+
+function saveRegistrationDraft(form) {
+  if(!form?.matches('[data-form="register"]'))return;
+  const draft={username:form.elements.username.value,nickname:form.elements.nickname.value,phone:form.elements.phone.value,email:form.elements.email.value,code:form.elements.code.value,codeSentAt:form.dataset.codeSentAt||'',codeSentEmail:form.dataset.codeSentEmail||''};
+  sessionStorage.setItem(REGISTRATION_DRAFT_KEY,JSON.stringify(draft));
+}
+
+function setRegistrationCodeSent(form,email,sentAt=Date.now()) {
+  form.dataset.codeSentEmail=email;form.dataset.codeSentAt=String(sentAt);
+  const captcha=$('[data-captcha-field]',form);if(captcha)captcha.hidden=true;
+  if(form.elements.captcha){form.elements.captcha.required=false;form.elements.captcha.disabled=true;}
+  if(form.elements.captchaId)form.elements.captchaId.disabled=true;
+  const notice=$('[data-registration-code-status]',form);if(notice){notice.hidden=false;notice.innerHTML=`${icon('mail',20)}<div>邮件验证码已发送至 <strong>${escapeHtml(email)}</strong><small>10 分钟内有效。切换到邮箱再返回时，当前填写内容会自动保留。</small></div>`;}
+  saveRegistrationDraft(form);
 }
 
 async function loginPage() {
@@ -1036,8 +1061,11 @@ async function loginPage() {
 
 async function registerPage() {
   if (state.user) return go('/events');
-  app.innerHTML = `<section class="auth-page"><div class="auth-shell"><form class="auth-card" data-form="register" novalidate><div class="auth-heading"><img class="auth-logo" src="/assets/ruibude-logo.jpg" alt="上海瑞卜德教育" width="84" height="84"><h1>创建报名账号</h1><p>通过邮箱验证码完成身份验证</p></div><div class="form-grid">${field('username','用户名','',{required:true,autocomplete:'username',minlength:2,maxlength:32,pattern:'[\\p{L}\\p{N}_-]{2,32}',placeholder:'用于识别账号，注册后不可修改',helper:'2–32 位中文、字母、数字、下划线或连字符'})}${field('nickname','昵称','',{autocomplete:'nickname',maxlength:50,placeholder:'便于页面显示，可选'})}${field('phone','手机号','',{type:'tel',required:true,autocomplete:'tel',inputmode:'tel',maxlength:24,placeholder:'仅作为注册信息，不用于验证'})}${field('email','邮箱','',{type:'email',required:true,autocomplete:'email',placeholder:'name@example.com'})}${captchaField()}<div class="form-field"><label for="code">邮箱验证码<span class="required" aria-hidden="true">*</span></label><div class="input-combo"><input class="form-control" id="code" name="code" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="6 位验证码"><button class="button button-secondary" type="button" data-action="send-code">获取验证码</button></div><p class="field-error" data-error="code" role="alert"></p></div>${passwordField('password','设置密码','new-password')}<div class="form-field"><button class="button button-primary" type="submit">注册</button></div></div><p class="helper">密码至少 8 位，且需同时包含字母和数字。</p><p class="auth-footer">已有账号？<a href="#/login">返回登录</a></p></form></div></section>`;
-  await refreshCaptcha();
+  const draft=readRegistrationDraft();
+  app.innerHTML = `<section class="auth-page"><div class="auth-shell"><form class="auth-card" data-form="register" novalidate><div class="auth-heading"><img class="auth-logo" src="/assets/ruibude-logo.jpg" alt="上海瑞卜德教育" width="84" height="84"><h1>创建报名账号</h1><p>通过邮箱验证码完成身份验证</p></div><div class="form-grid">${field('username','用户名',draft.username||'',{required:true,autocomplete:'username',minlength:2,maxlength:32,pattern:'[\\p{L}\\p{N}_-]{2,32}',placeholder:'用于识别账号，注册后不可修改',helper:'2–32 位中文、字母、数字、下划线或连字符'})}${field('nickname','昵称',draft.nickname||'',{autocomplete:'nickname',maxlength:50,placeholder:'便于页面显示，可选'})}${field('phone','手机号',draft.phone||'',{type:'tel',required:true,autocomplete:'tel',inputmode:'tel',maxlength:24,placeholder:'仅作为注册信息，不用于验证'})}${field('email','邮箱',draft.email||'',{type:'email',required:true,autocomplete:'email',placeholder:'name@example.com'})}${captchaField()}<div class="info-banner auth-code-notice" data-registration-code-status role="status" hidden></div><div class="form-field"><label for="code">邮箱验证码<span class="required" aria-hidden="true">*</span></label><div class="input-combo"><input class="form-control" id="code" name="code" value="${escapeHtml(draft.code||'')}" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="6 位验证码"><button class="button button-secondary" type="button" data-action="send-code">获取验证码</button></div><p class="helper">邮件验证码有效期 10 分钟。</p><p class="field-error" data-error="code" role="alert"></p></div>${passwordField('password','设置密码','new-password')}<div class="form-field"><button class="button button-primary" type="submit">注册</button></div></div><p class="helper">除密码外，注册信息会暂存在当前标签页。密码至少 8 位，且需同时包含字母和数字。</p><p class="auth-footer">已有账号？<a href="#/login">返回登录</a></p></form></div></section>`;
+  const form=$('[data-form="register"]');
+  const active=Boolean(draft.codeSentAt&&draft.codeSentEmail&&draft.codeSentEmail===draft.email&&Date.now()-Number(draft.codeSentAt)<AUTH_VERIFICATION_TTL_MS);
+  if(active)setRegistrationCodeSent(form,draft.codeSentEmail,draft.codeSentAt);else await refreshCaptcha(form);
 }
 
 async function forgotPasswordPage() {
@@ -1137,7 +1165,8 @@ async function memberFormPage(id) {
   if (id) { const data=await apiFetch('/api/members'); member=data.members.find((item)=>item.id===Number(id)); if(!member) throw new Error('未找到该队员'); }
   const gradeChoices=['小学','初中','高中','大学','其他'].map((v)=>[v,v]);
   const content=`<div class="card"><div class="card-body"><form data-form="member" data-id="${id||''}" novalidate><div class="form-grid">${field('name','姓名',member.name,{required:true,autocomplete:'name'})}${field('gender','性别',member.gender,{type:'select',required:true,choices:[['男','男'],['女','女'],['其他','其他']]})}${field('grade','年级',member.grade,{type:'select',required:true,choices:gradeChoices})}${field('school','学校',member.school,{required:true})}${field('id_number','身份证号',member.id_number,{required:true,maxlength:40,helper:'用于参赛资格审核，请确保与证件一致。'})}${field('phone','联系电话',member.phone,{type:'tel',required:true,inputmode:'tel',autocomplete:'tel'})}${field('province','省/直辖市',member.province)}${field('city','城市',member.city)}${field('nationality','国籍',member.nationality,{required:true})}${filePicker('photo_url','队员照片',member.photo_url,'member',true)}</div><div class="form-actions"><a class="button button-secondary" href="#/account/members">取消</a><button class="button button-primary" type="submit">${id?'保存修改':'添加队员'}</button></div></form></div></div>`;
-  app.innerHTML=portalShell(id?'编辑队员':'添加队员','带星号项目必须完整填写后才能保存。',content);
+  const actions=`<nav class="button-row portal-workflow-actions" aria-label="人员与战队创建快捷入口"><a class="button button-secondary" href="#/account/coaches/new">${icon('plus',17)}添加教练信息</a><a class="button button-secondary" href="#/account/teams/new">${icon('arrow',17)}前往创建战队信息</a></nav>`;
+  app.innerHTML=portalShell(id?'编辑队员':'添加队员','带星号项目必须完整填写后才能保存。',content,actions);
 }
 
 async function coachesPage() {
@@ -1149,7 +1178,8 @@ async function coachesPage() {
 async function coachFormPage(id) {
   if(!requireUser()) return; let coach={gender:'男',nationality:'中国'}; if(id){const data=await apiFetch('/api/coaches');coach=data.coaches.find((item)=>item.id===Number(id));if(!coach)throw new Error('未找到该教练');}
   const content=`<div class="card"><div class="card-body"><form data-form="coach" data-id="${id||''}" novalidate><div class="form-grid">${field('name','姓名',coach.name,{required:true,autocomplete:'name'})}${field('gender','性别',coach.gender,{type:'select',required:true,choices:[['男','男'],['女','女'],['其他','其他']]})}${field('phone','电话',coach.phone,{type:'tel',required:true,inputmode:'tel',autocomplete:'tel'})}${field('email','邮箱',coach.email,{type:'email',required:true,autocomplete:'email'})}${field('org_name','单位名称',coach.org_name,{required:true,full:true})}${field('province','省/直辖市',coach.province)}${field('city','城市',coach.city)}${field('nationality','国籍',coach.nationality,{required:true})}</div><div class="form-actions"><a class="button button-secondary" href="#/account/coaches">取消</a><button class="button button-primary" type="submit">${id?'保存修改':'添加教练'}</button></div></form></div></div>`;
-  app.innerHTML=portalShell(id?'编辑教练':'添加教练','教练无需上传照片或身份证件。',content);
+  const actions=`<nav class="button-row portal-workflow-actions" aria-label="人员与战队创建快捷入口"><a class="button button-secondary" href="#/account/members/new">${icon('plus',17)}添加队员信息</a><a class="button button-secondary" href="#/account/teams/new">${icon('arrow',17)}前往创建战队信息</a></nav>`;
+  app.innerHTML=portalShell(id?'编辑教练':'添加教练','教练无需上传照片或身份证件。',content,actions);
 }
 
 function teamActions(id) {
@@ -1226,8 +1256,9 @@ async function teamFormPage(id) {
   const numberPrefix=INNOVATION_GROUP_PREFIXES[team.group_name]||'';
   const numberMaxLength=numberPrefix?teamNumberSuffixMaxLength(numberPrefix):TEAM_NUMBER_MAX_LENGTH;
   const numberValue=teamNumberSuffix(team.number,team.group_name);
-  const content=`<div class="info-banner gap-bottom">${icon('info')}<div>先选择教练和队员，再从已选教练中指定一名联系人。每个战队最多选择两名教练。创建后，赛事报名下拉项将显示“战队编号 · 战队名称”。</div></div><div class="card"><div class="card-body"><form data-form="team" data-id="${id||''}" novalidate><div class="form-grid"><div class="form-field"><label for="number">战队编号<span class="required">*</span> <a href="#/team-number" class="team-number-link">如何获取？</a></label><div class="team-number-control"><span class="team-number-prefix" data-team-number-prefix ${numberPrefix?'':'hidden'}>${escapeHtml(numberPrefix)}</span><input class="form-control" id="number" name="number" required maxlength="${numberMaxLength}" value="${escapeHtml(numberValue)}" placeholder="${numberPrefix?'填写自定义后缀':'填写 RECF 官方战队编号'}" aria-describedby="number-helper number-error"></div><p class="helper" id="number-helper" data-team-number-helper>${numberPrefix?`系统将自动添加 <strong>${escapeHtml(numberPrefix)}</strong> 前缀；最终编号限 1–30 个 ASCII 字符，不可包含空格或中文。最终编号：<strong data-team-number-preview>${escapeHtml(numberPrefix+numberValue)}</strong>`:'请填写 RECF 官方战队编号，限 1–30 个 ASCII 字符；如尚未取得编号，可查看右侧“如何获取？”。'}</p><p class="field-error" id="number-error" data-error="number" role="alert"></p></div>${field('name','战队名称',team.name,{required:true})}${field('group_name','战队组别',team.group_name,{type:'select',required:true,choices:groupChoices})}${field('school_name','学校/机构名称',team.school_name,{required:true})}${field('school_name_en','学校/机构名称（英文）',team.school_name_en,{full:true})}<div class="form-field full"><span class="field-label">教练信息（最多选择两名）<span class="required">*</span></span>${choiceCards(coaches,'coach_ids',selectedCoaches,(c)=>`${c.phone} · ${c.org_name}`)}<p class="helper" data-coach-count aria-live="polite"></p><p class="field-error" data-error="coach_ids" role="alert"></p></div><div class="form-field full"><span class="field-label">队员信息（多选）<span class="required">*</span></span>${choiceCards(members,'member_ids',selectedMembers,(m)=>`${m.grade} · ${m.school}`)}<p class="field-error" data-error="member_ids" role="alert"></p></div><div class="form-field full"><label for="contact_coach_id">联系人（从已选教练中单选）<span class="required">*</span></label><select class="form-control" id="contact_coach_id" name="contact_coach_id" required><option value="">请先勾选教练</option>${coaches.filter((c)=>selectedCoaches.includes(c.id)).map((c)=>`<option value="${c.id}" ${c.id===team.contact_coach_id?'selected':''}>${escapeHtml(c.name)} · ${escapeHtml(c.phone)}</option>`).join('')}</select><p class="field-error" data-error="contact_coach_id" role="alert"></p></div>${field('address','单位地址',team.address,{full:true})}${field('address_en','单位地址（英文）',team.address_en,{full:true})}${field('province','省/直辖市',team.province)}${field('city','城市',team.city)}${field('nationality','国籍',team.nationality,{required:true})}</div><div class="form-actions"><a class="button button-secondary" href="#/account/teams">取消</a><button class="button button-primary" type="submit">${id?'保存战队':'创建战队'}</button></div></form></div></div>`;
-  app.innerHTML=portalShell(id?'编辑战队':'添加战队','战队资料会在报名确认与管理员审核时完整展示。',content);
+  const content=`<div class="info-banner gap-bottom">${icon('info')}<div>先选择教练和队员，再从已选教练中指定一名联系人。每个战队最多选择两名教练。创建后，赛事报名下拉项将显示“战队编号 · 战队名称”。</div></div><div class="card"><div class="card-body"><form data-form="team" data-id="${id||''}" novalidate><div class="form-grid"><div class="form-field"><label for="number">战队编号<span class="required">*</span> <a href="#/team-number" class="team-number-link">如何获取？</a></label><div class="team-number-control"><span class="team-number-prefix" data-team-number-prefix ${numberPrefix?'':'hidden'}>${escapeHtml(numberPrefix)}</span><input class="form-control" id="number" name="number" required maxlength="${numberMaxLength}" value="${escapeHtml(numberValue)}" placeholder="${numberPrefix?'填写自定义后缀':'填写 RECF 官方战队编号'}" aria-describedby="number-helper number-error"></div><p class="helper" id="number-helper" data-team-number-helper>${numberPrefix?`系统将自动添加 <strong>${escapeHtml(numberPrefix)}</strong> 前缀；最终编号限 1–30 个 ASCII 字符，不可包含空格或中文。最终编号：<strong data-team-number-preview>${escapeHtml(numberPrefix+numberValue)}</strong>`:'请填写 RECF 官方战队编号，限 1–30 个 ASCII 字符；如尚未取得编号，可查看右侧“如何获取？”。'}</p><p class="field-error" id="number-error" data-error="number" role="alert"></p></div>${field('name','战队名称',team.name,{required:true})}${field('group_name','战队组别',team.group_name,{type:'select',required:true,choices:groupChoices})}${field('school_name','学校/机构名称',team.school_name,{required:true})}${field('school_name_en','学校/机构名称（英文）',team.school_name_en,{full:true})}<div class="form-field full"><div class="field-label-row"><span class="field-label">教练信息（最多选择两名）<span class="required">*</span></span><a class="button button-secondary field-management-link" href="#/account/coaches">${icon('shield',17)}教练管理</a></div>${choiceCards(coaches,'coach_ids',selectedCoaches,(c)=>`${c.phone} · ${c.org_name}`)}<p class="helper" data-coach-count aria-live="polite"></p><p class="field-error" data-error="coach_ids" role="alert"></p></div><div class="form-field full"><div class="field-label-row"><span class="field-label">队员信息（多选）<span class="required">*</span></span><a class="button button-secondary field-management-link" href="#/account/members">${icon('users',17)}队员管理</a></div>${choiceCards(members,'member_ids',selectedMembers,(m)=>`${m.grade} · ${m.school}`)}<p class="field-error" data-error="member_ids" role="alert"></p></div><div class="form-field full"><label for="contact_coach_id">联系人（从已选教练中单选）<span class="required">*</span></label><select class="form-control" id="contact_coach_id" name="contact_coach_id" required><option value="">请先勾选教练</option>${coaches.filter((c)=>selectedCoaches.includes(c.id)).map((c)=>`<option value="${c.id}" ${c.id===team.contact_coach_id?'selected':''}>${escapeHtml(c.name)} · ${escapeHtml(c.phone)}</option>`).join('')}</select><p class="field-error" data-error="contact_coach_id" role="alert"></p></div>${field('address','单位地址',team.address,{full:true})}${field('address_en','单位地址（英文）',team.address_en,{full:true})}${field('province','省/直辖市',team.province)}${field('city','城市',team.city)}${field('nationality','国籍',team.nationality,{required:true})}</div><div class="form-actions"><a class="button button-secondary" href="#/account/teams">取消</a><button class="button button-primary" type="submit">${id?'保存战队':'创建战队'}</button></div></form></div></div>`;
+  const actions=`<nav class="button-row portal-workflow-actions" aria-label="人员与战队创建快捷入口"><a class="button button-secondary" href="#/account/members/new">${icon('plus',17)}添加队员信息</a><a class="button button-secondary" href="#/account/coaches/new">${icon('plus',17)}添加教练信息</a></nav>`;
+  app.innerHTML=portalShell(id?'编辑战队':'添加战队','战队资料会在报名确认与管理员审核时完整展示。',content,actions);
   const form=$('form[data-form="team"]');syncTeamNumberField(form);syncCoachChoiceLimit(form);
 }
 
@@ -1261,11 +1292,15 @@ async function adminTeamFormPage(id) {
   const form=$('form[data-form="admin-team"]');syncTeamNumberField(form);syncCoachChoiceLimit(form);
 }
 
-async function teamNumberHelpPage() {
+function teamNumberHelpPage() {
+  app.innerHTML=`<section class="page-section team-number-guide-page"><div class="container"><nav class="breadcrumb"><a href="#/account/teams/new">创建战队</a>${icon('chevron',14)}<span>获取战队编号</span></nav><div class="page-head"><div><h1>如何获取战队编号？</h1><p class="lead">请根据您目前的战队编号情况选择对应方式。</p></div><a class="button button-secondary" href="#/account/teams/new">${icon('arrow',17)}返回创建战队</a></div><div class="team-number-help" aria-label="战队编号获取方式"><article class="help-path"><span class="step-num" aria-hidden="true">1</span><h2>已有官方编号</h2><p>已经取得 RECF 官方战队编号，可直接返回战队创建页面填写编号并完善战队资料。</p><a class="button button-primary" href="#/account/teams/new">填写战队编号${icon('arrow',17)}</a></article><article class="help-path"><span class="step-num" aria-hidden="true">2</span><h2>尚无官方战队编号</h2><p>按照 RECFEvents 官方流程注册机构和战队编号。本站已整理完整中文图文步骤，可在站内继续查看。</p><a class="button button-secondary" href="#/team-number/guide">查看图文注册教程${icon('arrow',17)}</a></article><article class="help-path"><span class="step-num" aria-hidden="true">3</span><h2>无官方战队编号注册条件</h2><p>无官方战队编号注册条件的战队，请联系赛事组委会提交学校/机构、教练和参赛组别信息，由组委会协助完成编号申请。</p><address class="committee-contact"><span><strong>联系人</strong>小周老师</span><span><strong>组委会邮箱</strong><a href="mailto:654849662@qq.com">654849662@qq.com</a></span><span><strong>咨询电话</strong><a href="tel:13761393714">13761393714</a></span></address></article></div></div></section>`;
+}
+
+async function teamNumberGuidePage() {
   const response = await fetch('/content/recf-team-registration-guide.md', { cache: 'no-store' });
   if (!response.ok) throw new Error('战队编号获取指南加载失败');
   const guideMarkdown = await response.text();
-  app.innerHTML=`<section class="page-section team-number-guide-page"><div class="container"><nav class="breadcrumb"><a href="#/account/teams/new">创建战队</a>${icon('chevron',14)}<span>获取战队编号</span></nav><div class="page-head"><div><h1>如何获取战队编号？</h1><p class="lead">请按 RECFEvents 官方流程注册正式 RECF 战队编号，再回到本平台填写。</p></div><a class="button button-secondary" href="#/account/teams/new">${icon('arrow',17)}返回创建战队</a></div><article class="team-number-guide-document"><div class="markdown-body guide-markdown">${renderMarkdown(guideMarkdown)}</div></article></div></section>`;
+  app.innerHTML=`<section class="page-section team-number-guide-page"><div class="container"><nav class="breadcrumb"><a href="#/team-number">如何获取战队编号</a>${icon('chevron',14)}<span>图文注册教程</span></nav><div class="page-head"><div><h1>RECFEvents 图文注册教程</h1><p class="lead">按步骤创建账号、机构与战队编号，完成后返回本平台填写。</p></div><a class="button button-secondary" href="#/team-number">${icon('arrow',17)}返回获取方式</a></div><article class="team-number-guide-document"><div class="markdown-body guide-markdown">${renderMarkdown(guideMarkdown)}</div></article></div></section>`;
 }
 
 function registrationActions(r) {
@@ -1376,6 +1411,20 @@ function adminUserActions(user, query = '') {
   return `<a class="button button-secondary button-small" href="#/admin/users/${user.id}${suffix}">${icon('eye',16)}查看完整资料</a>`;
 }
 
+function userRoleBadge(role) {
+  return `<span class="badge ${role === 'admin' ? 'badge-admin' : 'badge-user'}">${role === 'admin' ? '管理员' : '普通用户'}</span>`;
+}
+
+function adminUserRoleAction(user) {
+  if (user.role === 'admin' && Number(user.id) === Number(state.user?.id)) {
+    return '<span class="muted current-admin-note">当前登录管理员不能降低自己的权限</span>';
+  }
+  const nextRole = user.role === 'admin' ? 'user' : 'admin';
+  const label = nextRole === 'admin' ? '提升为管理员' : '降为普通用户';
+  const buttonClass = nextRole === 'admin' ? 'button-primary' : 'button-danger-ghost';
+  return `<button class="button ${buttonClass}" type="button" data-action="change-user-role" data-id="${user.id}" data-role="${nextRole}" data-username="${escapeHtml(user.username)}">${icon('shield',17)}${label}</button>`;
+}
+
 async function adminUsersPage() {
   if (!requireAdmin()) return;
   const query = routeInfo().query.get('q') || '';
@@ -1383,9 +1432,9 @@ async function adminUsersPage() {
   if (query) params.set('q', query);
   const { users } = await apiFetch(`/api/admin/users${params.size ? `?${params}` : ''}`);
   const search = adminSearchForm(query, '搜索用户名、昵称、邮箱、战队编号/名称、教练员或学生姓名');
-  const resultNote = `<div class="result-note" aria-live="polite"><span>${query ? `找到 ${users.length} 个匹配用户` : `共 ${users.length} 个报名用户`}</span><small>仅显示普通报名账号，不包含管理员账号</small></div>`;
-  const content = `${search}${resultNote}${users.length ? `<div class="desktop-table data-table-wrap"><table class="data-table admin-user-table"><thead><tr><th>用户</th><th>邮箱 / 手机号</th><th>单位</th><th>关联资料</th><th>注册时间</th><th>操作</th></tr></thead><tbody>${users.map((user)=>`<tr><td><strong>${escapeHtml(user.username)}</strong><br><small class="muted">${escapeHtml(user.nickname || '未填写昵称')}</small></td><td>${escapeHtml(user.email)}<br><small class="muted">${escapeHtml(user.phone || '未填写手机号')}</small></td><td>${escapeHtml(user.org_name || '未填写')}</td><td><span class="nowrap">${user.team_count} 战队 / ${user.coach_count} 教练 / ${user.member_count} 学生</span><br><small class="muted">${user.registration_count} 条参赛报名</small></td><td>${formatDate(user.created_at,true)}</td><td>${adminUserActions(user,query)}</td></tr>`).join('')}</tbody></table></div><div class="mobile-list">${users.map((user)=>`<article class="entity-card"><div class="entity-card-head"><div><span class="record-label">${escapeHtml(user.username)}</span><h3>${escapeHtml(user.nickname || '未填写昵称')}</h3></div><span class="badge badge-upcoming">${user.team_count} 支战队</span></div><dl><div><dt>邮箱</dt><dd>${escapeHtml(user.email)}</dd></div><div><dt>手机号</dt><dd>${escapeHtml(user.phone || '未填写')}</dd></div><div><dt>关联人员</dt><dd>${user.coach_count} 名教练 / ${user.member_count} 名学生</dd></div><div><dt>参赛报名</dt><dd>${user.registration_count} 条</dd></div><div><dt>注册时间</dt><dd>${formatDate(user.created_at,true)}</dd></div></dl>${adminUserActions(user,query)}</article>`).join('')}</div>` : `<div class="empty-state"><div class="empty-icon">${icon('user',30)}</div><h3>${query ? '没有匹配的用户' : '尚无报名用户'}</h3><p>${query ? '可搜索用户名、昵称、邮箱、战队、教练员或学生姓名。' : '新用户完成邮箱验证注册后会显示在这里。'}</p></div>`}`;
-  app.innerHTML = adminShell('管理用户','查询报名账号及其战队、赛事、教练员和学生资料。',content);
+  const resultNote = `<div class="result-note" aria-live="polite"><span>${query ? `找到 ${users.length} 个匹配用户` : `共 ${users.length} 个用户账号`}</span><small>包含普通用户与管理员账号</small></div>`;
+  const content = `${search}${resultNote}${users.length ? `<div class="desktop-table data-table-wrap"><table class="data-table admin-user-table"><thead><tr><th>用户</th><th>权限</th><th>邮箱 / 手机号</th><th>单位</th><th>关联资料</th><th>注册时间</th><th>操作</th></tr></thead><tbody>${users.map((user)=>`<tr><td><strong>${escapeHtml(user.username)}</strong><br><small class="muted">${escapeHtml(user.nickname || '未填写昵称')}</small></td><td>${userRoleBadge(user.role)}</td><td>${escapeHtml(user.email)}<br><small class="muted">${escapeHtml(user.phone || '未填写手机号')}</small></td><td>${escapeHtml(user.org_name || '未填写')}</td><td><span class="nowrap">${user.team_count} 战队 / ${user.coach_count} 教练 / ${user.member_count} 学生</span><br><small class="muted">${user.registration_count} 条参赛报名</small></td><td>${formatDate(user.created_at,true)}</td><td>${adminUserActions(user,query)}</td></tr>`).join('')}</tbody></table></div><div class="mobile-list">${users.map((user)=>`<article class="entity-card"><div class="entity-card-head"><div><span class="record-label">${escapeHtml(user.username)}</span><h3>${escapeHtml(user.nickname || '未填写昵称')}</h3></div>${userRoleBadge(user.role)}</div><dl><div><dt>邮箱</dt><dd>${escapeHtml(user.email)}</dd></div><div><dt>手机号</dt><dd>${escapeHtml(user.phone || '未填写')}</dd></div><div><dt>战队</dt><dd>${user.team_count} 支</dd></div><div><dt>关联人员</dt><dd>${user.coach_count} 名教练 / ${user.member_count} 名学生</dd></div><div><dt>参赛报名</dt><dd>${user.registration_count} 条</dd></div><div><dt>注册时间</dt><dd>${formatDate(user.created_at,true)}</dd></div></dl>${adminUserActions(user,query)}</article>`).join('')}</div>` : `<div class="empty-state"><div class="empty-icon">${icon('user',30)}</div><h3>${query ? '没有匹配的用户' : '尚无用户账号'}</h3><p>${query ? '可搜索用户名、昵称、邮箱、战队、教练员或学生姓名。' : '用户完成注册后会显示在这里。'}</p></div>`}`;
+  app.innerHTML = adminShell('管理用户','查询用户权限及其战队、赛事、教练员和学生资料。',content);
 }
 
 async function adminUserDetailPage(id) {
@@ -1395,12 +1444,12 @@ async function adminUserDetailPage(id) {
   const backHref = `#/admin/users${query ? `?q=${encodeURIComponent(query)}` : ''}`;
   const names = (items) => items.length ? items.map((item)=>escapeHtml(item.name)).join('、') : '—';
   const metrics = `<div class="summary-grid user-detail-metrics"><div class="summary-card"><span>战队</span><strong>${user.teams.length}</strong></div><div class="summary-card"><span>教练员</span><strong>${user.coaches.length}</strong></div><div class="summary-card"><span>学生</span><strong>${user.members.length}</strong></div><div class="summary-card"><span>参赛报名</span><strong>${user.registrations.length}</strong></div></div>`;
-  const account = `<div class="card"><div class="card-header"><h2>注册与账户信息</h2><span class="record-label">用户 ID ${user.id}</span></div><div class="card-body">${detailRows([['用户名',user.username],['昵称',user.nickname],['邮箱',user.email],['注册手机号',user.phone],['联系人',user.contact_name],['身份证号码',user.id_number],['单位名称',user.org_name],['单位地址',user.org_address],['单位简介',user.org_intro],['注册时间',formatDate(user.created_at,true)]])}</div></div>`;
+  const account = `<div class="card"><div class="card-header"><h2>注册与账户信息</h2><span class="record-label">用户 ID ${user.id}</span></div><div class="card-body">${detailRows([['用户名',user.username],['昵称',user.nickname],['账号权限',user.role === 'admin' ? '管理员' : '普通用户'],['邮箱',user.email],['注册手机号',user.phone],['联系人',user.contact_name],['身份证号码',user.id_number],['单位名称',user.org_name],['单位地址',user.org_address],['单位简介',user.org_intro],['注册时间',formatDate(user.created_at,true)]])}<div class="user-role-actions">${adminUserRoleAction(user)}</div></div></div>`;
   const teams = `<div class="card card-stack"><div class="card-header"><h2>注册战队</h2><span class="muted">${user.teams.length} 支</span></div><div class="card-body">${user.teams.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>战队</th><th>组别</th><th>学校/机构</th><th>教练员</th><th>学生</th></tr></thead><tbody>${user.teams.map((team)=>`<tr><td><strong>${escapeHtml(team.number)}</strong><br><small class="muted">${escapeHtml(team.name)}</small></td><td>${escapeHtml(team.group_name)}</td><td>${escapeHtml(team.school_name)}</td><td>${names(team.coaches)}</td><td>${names(team.members)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">该用户尚未创建战队。</p>'}</div></div>`;
   const registrations = `<div class="card card-stack"><div class="card-header"><h2>参赛赛项</h2><span class="muted">${user.registrations.length} 条</span></div><div class="card-body">${user.registrations.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>赛事</th><th>参赛战队</th><th>组别</th><th>状态</th><th>提交时间</th></tr></thead><tbody>${user.registrations.map((registration)=>`<tr><td><a href="#/events/${registration.event_id}">${escapeHtml(registration.event_title)}</a><br><small class="muted">${formatDate(registration.starts_at)} — ${formatDate(registration.ends_at)}</small></td><td>${escapeHtml(registration.team_number)} · ${escapeHtml(registration.team_name)}</td><td>${escapeHtml(registration.group_name)}</td><td>${badge(reviewStatusMeta(registration.status))}</td><td>${formatDate(registration.created_at,true)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">该用户尚无参赛报名。</p>'}</div></div>`;
   const coaches = `<div class="card card-stack"><div class="card-header"><h2>教练员</h2><span class="muted">${user.coaches.length} 名</span></div><div class="card-body">${user.coaches.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>姓名</th><th>性别</th><th>电话</th><th>单位</th><th>邮箱</th><th>地区 / 国籍</th></tr></thead><tbody>${user.coaches.map((coach)=>`<tr><td>${escapeHtml(coach.name)}</td><td>${escapeHtml(coach.gender)}</td><td>${escapeHtml(coach.phone)}</td><td>${escapeHtml(coach.org_name)}</td><td>${escapeHtml(coach.email)}</td><td>${escapeHtml([coach.province,coach.city,coach.nationality].filter(Boolean).join(' / '))}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">该用户尚未添加教练员。</p>'}</div></div>`;
   const members = `<div class="card card-stack"><div class="card-header"><h2>学生 / 队员</h2><span class="muted">${user.members.length} 名</span></div><div class="card-body">${user.members.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>姓名</th><th>性别</th><th>年级</th><th>学校</th><th>身份证号</th><th>电话</th><th>地区 / 国籍</th></tr></thead><tbody>${user.members.map((member)=>`<tr><td>${escapeHtml(member.name)}</td><td>${escapeHtml(member.gender)}</td><td>${escapeHtml(member.grade)}</td><td>${escapeHtml(member.school)}</td><td>${escapeHtml(member.id_number)}</td><td>${escapeHtml(member.phone)}</td><td>${escapeHtml([member.province,member.city,member.nationality].filter(Boolean).join(' / '))}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">该用户尚未添加学生。</p>'}</div></div>`;
-  app.innerHTML = adminShell(`用户：${user.username}`,'查看该报名账号关联的完整业务资料。',`${metrics}${account}${teams}${registrations}${coaches}${members}`,`<a class="button button-secondary" href="${backHref}">${icon('arrow',17)}返回用户列表</a>`);
+  app.innerHTML = adminShell(`用户：${user.username}`,'查看该账号关联的完整业务资料与权限。',`${metrics}${account}${teams}${registrations}${coaches}${members}`,`<a class="button button-secondary" href="${backHref}">${icon('arrow',17)}返回用户列表</a>`);
 }
 
 async function adminEventFormPage(id) {
@@ -1421,8 +1470,9 @@ function adminRegistrationActionLabel(registration) {
 function adminReviewEventPicker(events, records, { basePath, activity = false, searchQuery = '' }) {
   const counts = new Map();
   records.forEach((record) => {
-    const current = counts.get(record.event_id) || { total: 0, pending: 0, refunds: 0, volunteer: 0, spectator: 0 };
+    const current = counts.get(record.event_id) || { total: 0, approved: 0, pending: 0, refunds: 0, volunteer: 0, spectator: 0 };
     current.total += 1;
+    if (record.status === 'approved' && !record.cancelled_at) current.approved += 1;
     if (record.status === 'pending' && !record.cancelled_at) current.pending += 1;
     if (record.refund_status === 'requested') current.refunds += 1;
     if (record.type === 'volunteer') current.volunteer += 1;
@@ -1439,10 +1489,10 @@ function adminReviewEventPicker(events, records, { basePath, activity = false, s
     return `${search}<div class="empty-state"><div class="empty-icon">${icon('calendar',30)}</div><h3>${title}</h3><p>${message}</p></div>`;
   }
   return `${search}<div class="review-event-grid" data-review-event-picker>${available.map((event) => {
-    const count = counts.get(event.id) || { total: 0, pending: 0, refunds: 0, volunteer: 0, spectator: 0 };
+    const count = counts.get(event.id) || { total: 0, approved: 0, pending: 0, refunds: 0, volunteer: 0, spectator: 0 };
     const stats = activity
       ? `<span><strong>${count.total}</strong> 条报名</span><span><strong>${count.volunteer}</strong> 志愿者</span><span><strong>${count.spectator}</strong> 观赛</span>`
-      : `<span><strong>${count.total}</strong> 支战队</span><span><strong>${count.pending}</strong> 待审核</span><span><strong>${count.refunds}</strong> 待处理退费</span>`;
+      : `<span><strong>${count.approved}</strong> 支已通过战队</span><span><strong>${count.pending}</strong> 待审核</span><span><strong>${count.refunds}</strong> 待处理退费</span>`;
     return `<article class="review-event-card"><div class="review-event-card-head"><span class="record-label">赛事 ID ${event.id}</span>${badge(eventStatusMeta(event.time_status))}</div><h2>${escapeHtml(event.title)}</h2><div class="review-event-meta"><div>${icon('calendar',17)}<span>${formatDate(event.starts_at)} — ${formatDate(event.ends_at)}</span></div><div>${icon('map',17)}<span>${escapeHtml(event.location)}</span></div></div><div class="review-event-stats" aria-label="报名统计">${stats}</div><a class="button button-primary" href="#${basePath}?event=${event.id}">进入审核${icon('arrow',17)}</a></article>`;
   }).join('')}</div>`;
 }
@@ -1577,7 +1627,7 @@ async function handleSubmit(event) {
     if(type==='password-reset-confirm') {
       const result=await apiFetch('/api/auth/password-reset/confirm',{method:'POST',body:JSON.stringify(data)});state.passwordResetChallenge=null;toast(result.message);go('/login');return;
     }
-    if(type==='register') { const result=await apiFetch('/api/auth/register',{method:'POST',body:JSON.stringify(data)}); toast(result.message); go('/login'); return; }
+    if(type==='register') { const result=await apiFetch('/api/auth/register',{method:'POST',body:JSON.stringify(data)}); sessionStorage.removeItem(REGISTRATION_DRAFT_KEY);toast(result.message); go('/login'); return; }
     if(type==='profile') { const result=await apiFetch('/api/profile',{method:'PUT',body:JSON.stringify(data)}); const me=await apiFetch('/api/auth/me');state.user=me.user;state.csrfToken=me.csrfToken;renderHeader();closeModal();toast(result.message);await render();return; }
     if(type==='password') { const result=await apiFetch('/api/profile/password',{method:'PUT',body:JSON.stringify(data)}); form.reset();toast(result.message);return; }
     if(type==='member') { const id=form.dataset.id; const result=await apiFetch(id?`/api/members/${id}`:'/api/members',{method:id?'PUT':'POST',body:JSON.stringify(data)});toast(result.message);go('/account/members');return; }
@@ -1598,15 +1648,18 @@ async function handleSubmit(event) {
     showErrors(form,error.fields);
     const duplicateTeamNumber=['team','admin-team'].includes(form.dataset.form)&&error.status===409&&(error.fields?.number===DUPLICATE_TEAM_NUMBER_MESSAGE||error.message===DUPLICATE_TEAM_NUMBER_MESSAGE);
     if(duplicateTeamNumber)teamNumberConflictModal();else toast(error.message,'error');
-    if(['register','password-reset-request'].includes(form.dataset.form)) await refreshCaptcha().catch(()=>{});
+    if(form.dataset.form==='password-reset-request') await refreshCaptcha(form).catch(()=>{});
   } finally { setLoading(button,false); }
 }
 
 async function sendCode(button) {
-  const form=button.closest('form'); clearErrors(form); const email=form.elements.email.value; const captcha=form.elements.captcha.value; const captchaId=form.elements.captchaId.value;
+  const form=button.closest('form'); clearErrors(form);
+  const captchaFieldElement=$('[data-captcha-field]',form);
+  if(captchaFieldElement?.hidden){captchaFieldElement.hidden=false;form.elements.captcha.disabled=false;form.elements.captcha.required=true;form.elements.captchaId.disabled=false;await refreshCaptcha(form);toast('请填写新的图形验证码，然后再次点击“重新获取”');form.elements.captcha.focus();return;}
+  const email=form.elements.email.value; const captcha=form.elements.captcha.value; const captchaId=form.elements.captchaId.value;
   if(!email||!captcha){showErrors(form,{email:email?'':'请填写邮箱',captcha:captcha?'':'请填写图形验证码'});return;}
   setLoading(button,true,'正在发送…');
-  try{const result=await apiFetch('/api/auth/send-code',{method:'POST',body:JSON.stringify({email,captcha,captchaId})});toast(result.message);if(result.devCode){form.elements.code.value=result.devCode;toast(`开发环境验证码已自动填入：${result.devCode}`);}let seconds=60;button.disabled=true;button.textContent=`${seconds} 秒后重试`;const timer=setInterval(()=>{seconds-=1;button.textContent=`${seconds} 秒后重试`;if(seconds<=0){clearInterval(timer);button.disabled=false;button.textContent='重新获取';}},1000);}catch(error){showErrors(form,error.fields);toast(error.message,'error');setLoading(button,false);await refreshCaptcha().catch(()=>{});}
+  try{const result=await apiFetch('/api/auth/send-code',{method:'POST',body:JSON.stringify({email,captcha,captchaId})});toast(result.message);if(result.devCode){form.elements.code.value=result.devCode;toast(`开发环境验证码已自动填入：${result.devCode}`);}setRegistrationCodeSent(form,email);let seconds=60;button.disabled=true;button.textContent=`${seconds} 秒后重试`;const timer=setInterval(()=>{seconds-=1;button.textContent=`${seconds} 秒后重试`;if(seconds<=0){clearInterval(timer);button.disabled=false;button.textContent='重新获取';}},1000);}catch(error){showErrors(form,error.fields);toast(error.message,'error');setLoading(button,false);await refreshCaptcha(form).catch(()=>{});}
 }
 
 function markdownImageAlt(file) {
@@ -1671,7 +1724,38 @@ async function deleteAdminEvent(id,label='该赛事') { const ok=await confirmAc
 
 async function deleteAdminTeam(id,label) { const ok=await confirmAction('删除已有战队',`仅没有参赛记录的战队可删除。确定删除“${label}”吗？此操作不可恢复。`);if(!ok)return;try{const result=await apiFetch(`/api/admin/teams/${id}`,{method:'DELETE'});toast(result.message);await render();}catch(error){toast(error.message,'error');} }
 
-document.addEventListener('input',(event)=>{const editor=event.target.closest('[data-markdown-visual]');if(editor)syncVisualMarkdown(editor);if(event.target.name==='number'&&event.target.closest('[data-form="team"],[data-form="admin-team"]'))syncTeamNumberField(event.target.form);if(['registration_end','refund_deadline_days'].includes(event.target.name)&&event.target.closest('[data-form="admin-event"]'))syncAdminRefundDeadline(event.target.form);});
+function confirmUserRoleChange(username, nextRole) {
+  const promoting = nextRole === 'admin';
+  const title = promoting ? '提升为管理员' : '降为普通用户';
+  const message = promoting
+    ? `提升后，“${username}”将可以管理赛事、用户、战队及报名审核。`
+    : `降级后，“${username}”将失去管理后台权限，但原有报名资料会保留。`;
+  return new Promise((resolve) => {
+    const bannerClass = promoting ? 'warning-banner' : 'danger-banner';
+    const buttonClass = promoting ? 'button-primary' : 'button-danger';
+    openModal(title, `<div class="${bannerClass} info-banner">${icon(promoting ? 'shield' : 'alert')}<div><strong>请确认权限变更</strong><br>${escapeHtml(message)}权限变更后，该账号需要重新登录。</div></div>`, `<button class="button button-secondary" type="button" data-action="confirm-cancel">取消</button><button class="button ${buttonClass}" type="button" data-action="confirm-ok">确认${promoting ? '提升' : '降级'}</button>`, 'small');
+    state.confirmResolver = resolve;
+  });
+}
+
+async function changeUserRole(button) {
+  const id = Number(button.dataset.id);
+  const role = button.dataset.role;
+  const username = button.dataset.username || '该用户';
+  const confirmed = await confirmUserRoleChange(username, role);
+  if (!confirmed) return;
+  button.disabled = true;
+  try {
+    const result = await apiFetch(`/api/admin/users/${id}/role`, { method: 'POST', body: JSON.stringify({ role }) });
+    toast(result.message);
+    await render();
+  } catch (error) {
+    button.disabled = false;
+    toast(error.message, 'error');
+  }
+}
+
+document.addEventListener('input',(event)=>{const editor=event.target.closest('[data-markdown-visual]');if(editor)syncVisualMarkdown(editor);const registerForm=event.target.closest('[data-form="register"]');if(registerForm){if(event.target.name==='email'&&registerForm.dataset.codeSentEmail&&event.target.value!==registerForm.dataset.codeSentEmail){delete registerForm.dataset.codeSentEmail;delete registerForm.dataset.codeSentAt;registerForm.elements.code.value='';const captcha=$('[data-captcha-field]',registerForm);if(captcha)captcha.hidden=false;registerForm.elements.captcha.disabled=false;registerForm.elements.captcha.required=true;registerForm.elements.captchaId.disabled=false;const notice=$('[data-registration-code-status]',registerForm);if(notice)notice.hidden=true;refreshCaptcha(registerForm).catch(()=>{});}saveRegistrationDraft(registerForm);}if(event.target.name==='number'&&event.target.closest('[data-form="team"],[data-form="admin-team"]'))syncTeamNumberField(event.target.form);if(['registration_end','refund_deadline_days'].includes(event.target.name)&&event.target.closest('[data-form="admin-event"]'))syncAdminRefundDeadline(event.target.form);});
 document.addEventListener('keydown',(event)=>{const editor=event.target.closest('[data-markdown-visual]');if(!editor||!(event.ctrlKey||event.metaKey))return;const format=event.key.toLowerCase()==='b'?'bold':event.key.toLowerCase()==='i'?'italic':'';if(!format)return;event.preventDefault();applyMarkdownFormat(editor.closest('.markdown-editor').querySelector(`[data-format="${format}"]`));});
 document.addEventListener('pointerdown',(event)=>{if(event.target.closest('.markdown-tool'))event.preventDefault();});
 document.addEventListener('paste',async(event)=>{const editor=event.target.closest('[data-markdown-visual]');if(!editor)return;const items=[...(event.clipboardData?.items||[])];const imageFiles=items.filter((item)=>item.kind==='file'&&item.type.startsWith('image/')).map((item)=>item.getAsFile()).filter(Boolean);event.preventDefault();if(imageFiles.length){rememberVisualSelection(editor);for(const file of imageFiles)await uploadMarkdownImageFile(editor,file);return;}document.execCommand('insertText',false,event.clipboardData?.getData('text/plain')||'');syncVisualMarkdown(editor);});
@@ -1706,6 +1790,7 @@ document.addEventListener('change',async(event)=>{
   }
 });
 
+window.addEventListener('pagehide',()=>saveRegistrationDraft($('[data-form="register"]')));
 document.addEventListener('click',async(event)=>{
   const target=event.target.closest('[data-action]');if(!target)return;const action=target.dataset.action;
   if(action==='skip-content'){event.preventDefault();app.focus({preventScroll:false});}
@@ -1717,7 +1802,7 @@ document.addEventListener('click',async(event)=>{
   if(action==='toggle-user-menu'){const menu=target.closest('.user-menu');menu.classList.toggle('open');target.setAttribute('aria-expanded',String(menu.classList.contains('open')));}
   if(action==='scroll-rule'){event.preventDefault();document.getElementById(target.dataset.target)?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});}
   if(action==='logout'){try{await apiFetch('/api/auth/logout',{method:'POST'});}catch{}state.user=null;state.csrfToken=null;renderHeader();toast('已退出登录');go('/events');}
-  if(action==='refresh-captcha'){await refreshCaptcha();}
+  if(action==='refresh-captcha'){await refreshCaptcha(target.closest('form')||document);}
   if(action==='restart-password-reset'){await forgotPasswordPage();}
   if(action==='toggle-password'){const input=document.getElementById(target.dataset.target);const visible=input.type==='text';input.type=visible?'password':'text';target.innerHTML=icon(visible?'eye':'eyeOff');target.setAttribute('aria-label',visible?'显示密码':'隐藏密码');}
   if(action==='markdown-format'){event.preventDefault();applyMarkdownFormat(target);}
@@ -1742,6 +1827,7 @@ document.addEventListener('click',async(event)=>{
   if(action==='delete-activity-application')await deleteActivityApplication(Number(target.dataset.id));
   if(action==='delete-admin-event')await deleteAdminEvent(Number(target.dataset.id),target.dataset.label);
   if(action==='delete-admin-team')await deleteAdminTeam(Number(target.dataset.id),target.dataset.label||'该战队');
+  if(action==='change-user-role')await changeUserRole(target);
   if(action==='clear-upload')clearUpload(target);
   if(action==='review-open')reviewModal(Number(target.dataset.id),target.dataset.status);
   if(action==='refund-review-open')refundReviewModal(Number(target.dataset.id),target.dataset.status);
@@ -1768,7 +1854,8 @@ async function render() {
     else if(path==='/login')await loginPage();
     else if(path==='/register')await registerPage();
     else if(path==='/forgot-password')await forgotPasswordPage();
-    else if(path==='/team-number')await teamNumberHelpPage();
+    else if(path==='/team-number')teamNumberHelpPage();
+    else if(path==='/team-number/guide')await teamNumberGuidePage();
     else if(path==='/account/profile')await profilePage();
     else if(path==='/account/members')await membersPage();
     else if(path==='/account/members/new')await memberFormPage();

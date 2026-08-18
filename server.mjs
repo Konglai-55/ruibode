@@ -19,6 +19,8 @@ const DATA_DIR = join(ROOT, 'data');
 const UPLOAD_DIR = join(DATA_DIR, 'uploads');
 const BODY_LIMIT = 30 * 1024 * 1024;
 const SESSION_DAYS = 14;
+const AUTH_VERIFICATION_TTL_MINUTES = 10;
+const AUTH_VERIFICATION_TTL_MS = AUTH_VERIFICATION_TTL_MINUTES * 60_000;
 const captchaStore = new Map();
 const rateBuckets = new Map();
 const INNOVATION_GROUP_PREFIXES = Object.freeze({
@@ -777,9 +779,9 @@ function adminTeamDetails(db, teamId) {
 }
 
 function adminUserDetails(db, userId) {
-  const user = db.prepare(`SELECT id,username,nickname,email,phone,contact_name,id_number,org_name,org_address,org_intro,avatar_url,created_at
-    FROM users WHERE id=? AND role='user'`).get(userId);
-  if (!user) throw fail(404, '未找到该报名用户');
+  const user = db.prepare(`SELECT id,username,nickname,email,phone,contact_name,id_number,org_name,org_address,org_intro,avatar_url,role,created_at
+    FROM users WHERE id=?`).get(userId);
+  if (!user) throw fail(404, '未找到该用户');
   user.coaches = db.prepare('SELECT * FROM coaches WHERE user_id=? ORDER BY created_at DESC,id DESC').all(userId);
   user.members = db.prepare('SELECT * FROM members WHERE user_id=? ORDER BY created_at DESC,id DESC').all(userId);
   user.teams = db.prepare('SELECT * FROM teams WHERE user_id=? ORDER BY updated_at DESC,id DESC').all(userId).map((team) => ({
@@ -1432,9 +1434,9 @@ async function api(req, res, url, appDb, uploadDir) {
     if (!allowRate(`captcha:${ip}`, 40, 15 * 60_000)) throw fail(429, '验证码获取过于频繁，请稍后再试');
     const id = randomBytes(16).toString('hex');
     const code = Array.from({ length: 4 }, () => CAPTCHA_ALPHABET[randomInt(CAPTCHA_ALPHABET.length)]).join('');
-    captchaStore.set(id, { code, expires: Date.now() + 5 * 60_000 });
+    captchaStore.set(id, { code, expires: Date.now() + AUTH_VERIFICATION_TTL_MS });
     const svg = captchaSvg(code);
-    return json(res, 200, { id, svg: `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`, ...(process.env.NODE_ENV === 'test' ? { devCode: code } : {}) });
+    return json(res, 200, { id, svg: `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`, expiresInSeconds: AUTH_VERIFICATION_TTL_MINUTES * 60, ...(process.env.NODE_ENV === 'test' ? { devCode: code } : {}) });
   }
 
   if (method === 'GET' && path === '/api/auth/me') {
@@ -1453,9 +1455,9 @@ async function api(req, res, url, appDb, uploadDir) {
     if (!allowRate(`mail:${ip}`, 8, 15 * 60_000) || !allowRate(`mail:${email}`, 3, 15 * 60_000)) throw fail(429, '验证码发送过于频繁，请稍后再试');
     const code = String(randomInt(100000, 1000000));
     db.prepare('INSERT INTO verification_codes(email,code_hash,expires_at,created_at) VALUES(?,?,?,?)')
-      .run(email, sha256(code), new Date(Date.now() + 10 * 60_000).toISOString(), nowIso());
+      .run(email, sha256(code), new Date(Date.now() + AUTH_VERIFICATION_TTL_MS).toISOString(), nowIso());
     await sendEmailMessage({ to: email, subject: `${PLATFORM_NAME}注册验证码`, ...verificationCodeEmailPayload(code) });
-    return json(res, 200, { message: '验证码已发送，请在 10 分钟内完成验证', ...(shouldExposeEmailDevCode() ? { devCode: code } : {}) });
+    return json(res, 200, { message: '验证码已发送，请在 10 分钟内完成验证', expiresInSeconds: AUTH_VERIFICATION_TTL_MINUTES * 60, ...(shouldExposeEmailDevCode() ? { devCode: code } : {}) });
   }
 
   if (method === 'POST' && path === '/api/auth/register') {
@@ -1501,7 +1503,7 @@ async function api(req, res, url, appDb, uploadDir) {
       withTransaction(db, () => {
         db.prepare('UPDATE password_reset_challenges SET used_at=? WHERE user_id=? AND used_at IS NULL').run(createdAt, user.id);
         db.prepare('INSERT INTO password_reset_challenges(token_hash,user_id,code_hash,expires_at,created_at) VALUES(?,?,?,?,?)')
-          .run(sha256(challengeId), user.id, sha256(`${challengeId}:${code}`), new Date(Date.now() + 10 * 60_000).toISOString(), createdAt);
+          .run(sha256(challengeId), user.id, sha256(`${challengeId}:${code}`), new Date(Date.now() + AUTH_VERIFICATION_TTL_MS).toISOString(), createdAt);
       });
       try {
         await sendEmailMessage({
@@ -1518,6 +1520,7 @@ async function api(req, res, url, appDb, uploadDir) {
       message: '如果该邮箱已注册，密码重置验证码将在几分钟内送达',
       challengeId,
       maskedEmail: maskEmail(email),
+      expiresInSeconds: AUTH_VERIFICATION_TTL_MINUTES * 60,
       ...(user && shouldExposeEmailDevCode() ? { devCode: code } : {}),
     });
   }
@@ -1914,7 +1917,7 @@ async function api(req, res, url, appDb, uploadDir) {
   if (method === 'GET' && path === '/api/admin/users') {
     auth(req, appDb, 'admin');
     const query = cleanText(url.searchParams.get('q'), 120);
-    const conditions = ["u.role='user'"];
+    const conditions = [];
     const args = [];
     if (query) {
       const term = `%${query}%`;
@@ -1924,13 +1927,40 @@ async function api(req, res, url, appDb, uploadDir) {
         OR EXISTS(SELECT 1 FROM members m WHERE m.user_id=u.id AND m.name LIKE ? COLLATE NOCASE))`);
       args.push(term, term, term, term, term, term, term);
     }
-    const users = db.prepare(`SELECT u.id,u.username,u.nickname,u.email,u.phone,u.contact_name,u.org_name,u.created_at,
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const users = db.prepare(`SELECT u.id,u.username,u.nickname,u.email,u.phone,u.contact_name,u.org_name,u.role,u.created_at,
       (SELECT COUNT(*) FROM teams t WHERE t.user_id=u.id) AS team_count,
       (SELECT COUNT(*) FROM coaches c WHERE c.user_id=u.id) AS coach_count,
       (SELECT COUNT(*) FROM members m WHERE m.user_id=u.id) AS member_count,
       (SELECT COUNT(*) FROM registrations r WHERE r.user_id=u.id) AS registration_count
-      FROM users u WHERE ${conditions.join(' AND ')} ORDER BY u.created_at DESC,u.id DESC`).all(...args);
+      FROM users u ${where} ORDER BY u.created_at DESC,u.id DESC`).all(...args);
     return json(res, 200, { users });
+  }
+  if ((params=matchRoute(path,'/api/admin/users/:id/role')) && method==='POST') {
+    const actor = auth(req, appDb, 'admin');
+    const id = Number(params.id);
+    if (!Number.isInteger(id) || id <= 0) throw fail(422, '用户编号无效');
+    const body = await bodyJson(req);
+    const nextRole = cleanText(body.role, 20);
+    if (!['user', 'admin'].includes(nextRole)) throw fail(422, '用户权限无效');
+    const result = withTransaction(db, () => {
+      const target = db.prepare('SELECT id,username,email,role FROM users WHERE id=?').get(id);
+      if (!target) throw fail(404, '未找到该用户');
+      if (target.role === nextRole) return { target, changed: false };
+      if (nextRole === 'user') {
+        if (actor.id === id) throw fail(409, '不能降低当前登录管理员自己的权限');
+        const adminCount = db.prepare("SELECT COUNT(*) AS count FROM users WHERE role='admin'").get().count;
+        if (adminCount <= 1) throw fail(409, '系统至少需要保留一名管理员');
+      }
+      db.prepare('UPDATE users SET role=? WHERE id=?').run(nextRole, id);
+      db.prepare('DELETE FROM sessions WHERE user_id=?').run(id);
+      return { target: { ...target, role: nextRole }, changed: true };
+    });
+    const roleLabel = nextRole === 'admin' ? '管理员' : '普通用户';
+    return json(res, 200, {
+      message: result.changed ? `已将“${result.target.username}”设为${roleLabel}，该账号需重新登录` : `该账号已经是${roleLabel}`,
+      user: { id: result.target.id, role: result.target.role },
+    });
   }
   if ((params=matchRoute(path,'/api/admin/users/:id')) && method==='GET') {
     auth(req, appDb, 'admin');

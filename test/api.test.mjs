@@ -63,6 +63,7 @@ function client(base) {
     async captcha() {
       const { payload } = await this.request('/api/captcha');
       assert.ok(payload.devCode, '测试环境应提供不可用于生产的验证码辅助值');
+      assert.equal(payload.expiresInSeconds, 600, '图形验证码应有 10 分钟有效期');
       return { captchaId: payload.id, captcha: payload.devCode };
     },
     async login(email, password) {
@@ -140,6 +141,7 @@ test('可通过邮箱验证码重置密码并注销旧会话', async () => {
     assert.equal(sent.response.status, 200);
     assert.ok(sent.payload.challengeId);
     assert.match(sent.payload.devCode, /^\d{6}$/);
+    assert.equal(sent.payload.expiresInSeconds, 600, '密码找回邮箱验证码应有 10 分钟有效期');
 
     const wrong = await recovery.request('/api/auth/password-reset/confirm', { method: 'POST', body: JSON.stringify({ challengeId: sent.payload.challengeId, code: '000000', password: 'Changed123', confirm_password: 'Changed123' }) });
     assert.equal(wrong.response.status, 422);
@@ -364,6 +366,7 @@ test('邮箱验证注册、登录、资料建档、组队和报名流程可贯�
     const sent = await user.request('/api/auth/send-code', { method: 'POST', body: JSON.stringify({ email: 'new-user@example.com', ...captcha }) });
     assert.equal(sent.response.status, 200);
     assert.match(sent.payload.devCode, /^\d{6}$/);
+    assert.equal(sent.payload.expiresInSeconds, 600, '邮箱验证码应有 10 分钟有效期');
     const missingPhone = await user.request('/api/auth/register', { method: 'POST', body: JSON.stringify({ username: 'new-user', email: 'new-user@example.com', password: 'Strong123', nickname: '新用户', code: sent.payload.devCode }) });
     assert.equal(missingPhone.response.status, 422);
     assert.equal(missingPhone.payload.fields.phone, '此项为必填项');
@@ -487,6 +490,8 @@ test('管理员可搜索审核与已有战队，已结束赛事自动移出审�
 
     const forbiddenTeams = await demo.request('/api/admin/teams');
     assert.equal(forbiddenTeams.response.status, 403);
+    const forbiddenRoleChange = await demo.request(`/api/admin/users/${team.user_id}/role`, { method: 'POST', body: JSON.stringify({ role: 'admin' }) });
+    assert.equal(forbiddenRoleChange.response.status, 403);
     await admin.login('admin@ruibude.local', 'Admin123!');
 
     const searchedRegistration = await admin.request(`/api/admin/registrations?q=${encodeURIComponent(team.number)}`);
@@ -537,6 +542,7 @@ test('管理员可搜索审核与已有战队，已结束赛事自动移出审�
     const userDetail = await admin.request(`/api/admin/users/${team.user_id}`);
     assert.equal(userDetail.response.status, 200);
     assert.equal(userDetail.payload.user.username, 'demo');
+    assert.equal(userDetail.payload.user.role, 'user');
     assert.ok(userDetail.payload.user.teams.some((item) => item.id === team.id));
     assert.ok(userDetail.payload.user.coaches.some((item) => item.name === team.coaches[0].name));
     assert.ok(userDetail.payload.user.members.some((item) => item.name === team.members[0].name));
@@ -559,6 +565,26 @@ test('管理员可搜索审核与已有战队，已结束赛事自动移出审�
     assert.equal(deleted.response.status, 200);
     const missing = await admin.request(`/api/admin/teams/${disposable.payload.id}`);
     assert.equal(missing.response.status, 404);
+
+    const allUsers = await admin.request('/api/admin/users');
+    assert.ok(allUsers.payload.users.some((item) => item.email === 'admin@ruibude.local' && item.role === 'admin'));
+    assert.ok(allUsers.payload.users.some((item) => item.email === 'demo@ruibude.local' && item.role === 'user'));
+    const currentAdmin = app.db.prepare("SELECT id FROM users WHERE email='admin@ruibude.local'").get();
+    const blockedSelfDemotion = await admin.request(`/api/admin/users/${currentAdmin.id}/role`, { method: 'POST', body: JSON.stringify({ role: 'user' }) });
+    assert.equal(blockedSelfDemotion.response.status, 409);
+    assert.match(blockedSelfDemotion.payload.error, /不能降低当前登录管理员自己的权限/);
+    const promoted = await admin.request(`/api/admin/users/${team.user_id}/role`, { method: 'POST', body: JSON.stringify({ role: 'admin' }) });
+    assert.equal(promoted.response.status, 200);
+    assert.equal(app.db.prepare('SELECT role FROM users WHERE id=?').get(team.user_id).role, 'admin');
+    const revokedDemoSession = await demo.request('/api/admin/summary');
+    assert.equal(revokedDemoSession.response.status, 401, '权限变化后目标账号的已有会话应失效');
+    const promotedDetail = await admin.request(`/api/admin/users/${team.user_id}`);
+    assert.equal(promotedDetail.payload.user.role, 'admin');
+    const demoted = await admin.request(`/api/admin/users/${team.user_id}/role`, { method: 'POST', body: JSON.stringify({ role: 'user' }) });
+    assert.equal(demoted.response.status, 200);
+    assert.equal(app.db.prepare('SELECT role FROM users WHERE id=?').get(team.user_id).role, 'user');
+    const demotedDetail = await admin.request(`/api/admin/users/${team.user_id}`);
+    assert.equal(demotedDetail.payload.user.role, 'user');
 
     const retainedEvents = await admin.request('/api/admin/events');
     assert.ok(retainedEvents.payload.events.some((item) => item.id === endedEvent.id), '赛事结束后仍应保留，等待管理员决定是否删除');
