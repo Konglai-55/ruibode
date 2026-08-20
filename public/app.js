@@ -735,6 +735,9 @@ function startHomeCarousel() {
 
 function homePage() {
   const droneVideoUrl = '/assets/home/drone-competition.mp4';
+  const announcementVideoUrl = '/assets/home/recf-tarek-shraibati-congratulations.mp4';
+  const announcementVideoPoster = '/assets/home/recf-tarek-shraibati-congratulations-poster.jpg';
+  const announcementVideoTitle = '【重磅官宣】RECF国际副总裁Tarek Shraibati致贺词：正式确认上海瑞卜德教育科技有限公司为中国官方国际代表';
   const recfPartnerUrl = 'https://recf.org/about-us/our-partners/';
   const robotVexBannerUrl = 'http://robotvex.com/';
   const robotVexUrl = 'http://www.robotvex.com/';
@@ -768,6 +771,22 @@ function homePage() {
     <div class="home-hero" aria-label="首页轮播图">
       <div class="home-hero-slides">${heroSlides.map((slide, index) => `<figure class="home-hero-slide ${index === 0 ? 'is-active' : ''}" aria-hidden="${index === 0 ? 'false' : 'true'}"><a class="home-hero-link" ${heroLinkAttrs(slide)} aria-label="${escapeHtml(slide.alt)}"><img src="/assets/home/${slide.file}" alt="${escapeHtml(slide.alt)}" width="1920" height="720"${index === 0 ? ' loading="eager"' : ' loading="lazy"'}></a></figure>`).join('')}</div>
       <div class="home-hero-dots" aria-label="首页轮播图切换">${heroSlides.map((_, index) => `<button class="${index === 0 ? 'active' : ''}" type="button" data-action="home-slide" data-slide-index="${index}" aria-label="显示第 ${index + 1} 张首页轮播图" aria-current="${index === 0 ? 'true' : 'false'}"></button>`).join('')}</div>
+    </div>
+    <div class="home-block home-featured-video-block">
+      <div class="container">
+        <article class="home-featured-video" aria-labelledby="home-announcement-video-title">
+          <header class="home-featured-video-head">
+            <span>官方视频</span>
+            <h2 id="home-announcement-video-title">${escapeHtml(announcementVideoTitle)}</h2>
+          </header>
+          <div class="home-featured-video-frame">
+            <video controls playsinline preload="metadata" poster="${announcementVideoPoster}" aria-label="${escapeHtml(announcementVideoTitle)}" width="1280" height="720">
+              <source src="${announcementVideoUrl}" type="video/mp4">
+              您的浏览器暂不支持视频播放，可<a href="${announcementVideoUrl}">下载视频</a>后观看。
+            </video>
+          </div>
+        </article>
+      </div>
     </div>
     <div class="home-block home-intro-block">
       <div class="container">
@@ -1420,9 +1439,16 @@ function adminUserRoleAction(user) {
     return '<span class="muted current-admin-note">当前登录管理员不能降低自己的权限</span>';
   }
   const nextRole = user.role === 'admin' ? 'user' : 'admin';
-  const label = nextRole === 'admin' ? '提升为管理员' : '降为普通用户';
+  const label = nextRole === 'admin' ? '添加为管理员' : '撤销管理员';
   const buttonClass = nextRole === 'admin' ? 'button-primary' : 'button-danger-ghost';
   return `<button class="button ${buttonClass}" type="button" data-action="change-user-role" data-id="${user.id}" data-role="${nextRole}" data-username="${escapeHtml(user.username)}">${icon('shield',17)}${label}</button>`;
+}
+
+function adminUserRolePanel(user) {
+  const description = user.role === 'admin'
+    ? '该账号当前可以进入管理后台并管理赛事、用户、战队及报名审核。'
+    : '添加后，该账号将获得管理后台的全部管理员权限。';
+  return `<section class="user-role-panel" aria-label="管理员权限操作"><div class="user-role-panel-copy"><strong>管理员权限</strong><p>${description}</p></div><div class="user-role-actions">${adminUserRoleAction(user)}</div></section>`;
 }
 
 async function adminUsersPage() {
@@ -1444,7 +1470,7 @@ async function adminUserDetailPage(id) {
   const backHref = `#/admin/users${query ? `?q=${encodeURIComponent(query)}` : ''}`;
   const names = (items) => items.length ? items.map((item)=>escapeHtml(item.name)).join('、') : '—';
   const metrics = `<div class="summary-grid user-detail-metrics"><div class="summary-card"><span>战队</span><strong>${user.teams.length}</strong></div><div class="summary-card"><span>教练员</span><strong>${user.coaches.length}</strong></div><div class="summary-card"><span>学生</span><strong>${user.members.length}</strong></div><div class="summary-card"><span>参赛报名</span><strong>${user.registrations.length}</strong></div></div>`;
-  const account = `<div class="card"><div class="card-header"><h2>注册与账户信息</h2><span class="record-label">用户 ID ${user.id}</span></div><div class="card-body">${detailRows([['用户名',user.username],['昵称',user.nickname],['账号权限',user.role === 'admin' ? '管理员' : '普通用户'],['邮箱',user.email],['注册手机号',user.phone],['联系人',user.contact_name],['身份证号码',user.id_number],['单位名称',user.org_name],['单位地址',user.org_address],['单位简介',user.org_intro],['注册时间',formatDate(user.created_at,true)]])}<div class="user-role-actions">${adminUserRoleAction(user)}</div></div></div>`;
+  const account = `<div class="card"><div class="card-header"><h2>注册与账户信息</h2><span class="record-label">用户 ID ${user.id}</span></div><div class="card-body">${detailRows([['用户名',user.username],['昵称',user.nickname],['账号权限',user.role === 'admin' ? '管理员' : '普通用户'],['邮箱',user.email],['注册手机号',user.phone],['联系人',user.contact_name],['身份证号码',user.id_number],['单位名称',user.org_name],['单位地址',user.org_address],['单位简介',user.org_intro],['注册时间',formatDate(user.created_at,true)]])}${adminUserRolePanel(user)}</div></div>`;
   const teams = `<div class="card card-stack"><div class="card-header"><h2>注册战队</h2><span class="muted">${user.teams.length} 支</span></div><div class="card-body">${user.teams.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>战队</th><th>组别</th><th>学校/机构</th><th>教练员</th><th>学生</th></tr></thead><tbody>${user.teams.map((team)=>`<tr><td><strong>${escapeHtml(team.number)}</strong><br><small class="muted">${escapeHtml(team.name)}</small></td><td>${escapeHtml(team.group_name)}</td><td>${escapeHtml(team.school_name)}</td><td>${names(team.coaches)}</td><td>${names(team.members)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">该用户尚未创建战队。</p>'}</div></div>`;
   const registrations = `<div class="card card-stack"><div class="card-header"><h2>参赛赛项</h2><span class="muted">${user.registrations.length} 条</span></div><div class="card-body">${user.registrations.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>赛事</th><th>参赛战队</th><th>组别</th><th>状态</th><th>提交时间</th></tr></thead><tbody>${user.registrations.map((registration)=>`<tr><td><a href="#/events/${registration.event_id}">${escapeHtml(registration.event_title)}</a><br><small class="muted">${formatDate(registration.starts_at)} — ${formatDate(registration.ends_at)}</small></td><td>${escapeHtml(registration.team_number)} · ${escapeHtml(registration.team_name)}</td><td>${escapeHtml(registration.group_name)}</td><td>${badge(reviewStatusMeta(registration.status))}</td><td>${formatDate(registration.created_at,true)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">该用户尚无参赛报名。</p>'}</div></div>`;
   const coaches = `<div class="card card-stack"><div class="card-header"><h2>教练员</h2><span class="muted">${user.coaches.length} 名</span></div><div class="card-body">${user.coaches.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>姓名</th><th>性别</th><th>电话</th><th>单位</th><th>邮箱</th><th>地区 / 国籍</th></tr></thead><tbody>${user.coaches.map((coach)=>`<tr><td>${escapeHtml(coach.name)}</td><td>${escapeHtml(coach.gender)}</td><td>${escapeHtml(coach.phone)}</td><td>${escapeHtml(coach.org_name)}</td><td>${escapeHtml(coach.email)}</td><td>${escapeHtml([coach.province,coach.city,coach.nationality].filter(Boolean).join(' / '))}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">该用户尚未添加教练员。</p>'}</div></div>`;
@@ -1726,14 +1752,14 @@ async function deleteAdminTeam(id,label) { const ok=await confirmAction('删除�
 
 function confirmUserRoleChange(username, nextRole) {
   const promoting = nextRole === 'admin';
-  const title = promoting ? '提升为管理员' : '降为普通用户';
+  const title = promoting ? '添加为管理员' : '撤销管理员';
   const message = promoting
-    ? `提升后，“${username}”将可以管理赛事、用户、战队及报名审核。`
-    : `降级后，“${username}”将失去管理后台权限，但原有报名资料会保留。`;
+    ? `添加后，“${username}”将可以管理赛事、用户、战队及报名审核。`
+    : `撤销后，“${username}”将失去管理后台权限，但原有报名资料会保留。`;
   return new Promise((resolve) => {
     const bannerClass = promoting ? 'warning-banner' : 'danger-banner';
     const buttonClass = promoting ? 'button-primary' : 'button-danger';
-    openModal(title, `<div class="${bannerClass} info-banner">${icon(promoting ? 'shield' : 'alert')}<div><strong>请确认权限变更</strong><br>${escapeHtml(message)}权限变更后，该账号需要重新登录。</div></div>`, `<button class="button button-secondary" type="button" data-action="confirm-cancel">取消</button><button class="button ${buttonClass}" type="button" data-action="confirm-ok">确认${promoting ? '提升' : '降级'}</button>`, 'small');
+    openModal(title, `<div class="${bannerClass} info-banner">${icon(promoting ? 'shield' : 'alert')}<div><strong>请确认权限变更</strong><br>${escapeHtml(message)}权限变更后，该账号需要重新登录。</div></div>`, `<button class="button button-secondary" type="button" data-action="confirm-cancel">取消</button><button class="button ${buttonClass}" type="button" data-action="confirm-ok">确认${promoting ? '添加' : '撤销'}</button>`, 'small');
     state.confirmResolver = resolve;
   });
 }

@@ -76,6 +76,7 @@ for (const profile of [
   const homeInfo = await page.evaluate(() => {
     const heroRect = document.querySelector('.home-hero').getBoundingClientRect();
     const introRect = document.querySelector('.home-intro-panel').getBoundingClientRect();
+    const featuredVideo = document.querySelector('.home-featured-video video');
     return {
       scrollWidth: document.documentElement.scrollWidth,
       clientWidth: document.documentElement.clientWidth,
@@ -97,6 +98,12 @@ for (const profile of [
       platformHrefs: [...document.querySelectorAll('.home-platform-logos a')].map((link) => link.getAttribute('href')),
       logoHrefs: [...document.querySelectorAll('.home-link-logo-link')].map((link) => link.getAttribute('href')),
       homeHref: document.querySelector('.desktop-nav a[href="#/home"], .mobile-drawer a[href="#/home"]')?.getAttribute('href'),
+      featuredVideoTitle: document.querySelector('.home-featured-video-head h2')?.textContent?.trim(),
+      featuredVideoSrc: featuredVideo?.querySelector('source')?.getAttribute('src'),
+      featuredVideoPoster: featuredVideo?.getAttribute('poster'),
+      featuredVideoControls: featuredVideo?.controls,
+      featuredVideoAutoplay: featuredVideo?.autoplay,
+      featuredVideoPreload: featuredVideo?.preload,
     };
   });
   const ratioValid = profile.name === 'desktop-home' ? homeInfo.heroRatio >= 2.78 && homeInfo.heroRatio <= 2.92 : homeInfo.heroRatio >= 1.7;
@@ -106,7 +113,8 @@ for (const profile of [
   const expectedPartnerImageSrcs = ['/assets/recf-header-logo.png', '/assets/home/partner-coding-logo.png', '/assets/ruibude-logo.jpg'];
   const expectedPlatformHrefs = ['/assets/home/drone-competition.mp4', '/assets/home/drone-competition.mp4'];
   const expectedLogoHrefs = ['https://recf.org/about-us/our-partners/', 'http://www.robotvex.com/'];
-  checks.push({ profile: profile.name, ...homeInfo, overflow: homeInfo.scrollWidth > homeInfo.clientWidth + 1, valid: homeInfo.title === '准备好开启你的机器人竞技之旅了吗？' && homeInfo.programCount === 3 && homeInfo.dotCount === 5 && homeInfo.activeDot === '2' && homeInfo.activeHero === '/assets/home/hero-robotvex.png' && ratioValid && homeInfo.heroAligned && homeInfo.firstHeroLoaded && homeInfo.programImagesLoaded && homeInfo.homeHref === '#/home' && homeInfo.heroHrefs.join('|') === expectedHeroHrefs.join('|') && homeInfo.heroActions.join('|') === expectedHeroActions.join('|') && homeInfo.partnerHrefs.join('|') === expectedPartnerHrefs.join('|') && homeInfo.partnerImageSrcs.join('|') === expectedPartnerImageSrcs.join('|') && homeInfo.platformHrefs.join('|') === expectedPlatformHrefs.join('|') && homeInfo.logoHrefs.join('|') === expectedLogoHrefs.join('|') && homeInfo.scrollWidth <= homeInfo.clientWidth + 1 });
+  const featuredVideoValid = homeInfo.featuredVideoTitle === '【重磅官宣】RECF国际副总裁Tarek Shraibati致贺词：正式确认上海瑞卜德教育科技有限公司为中国官方国际代表' && homeInfo.featuredVideoSrc === '/assets/home/recf-tarek-shraibati-congratulations.mp4' && homeInfo.featuredVideoPoster === '/assets/home/recf-tarek-shraibati-congratulations-poster.jpg' && homeInfo.featuredVideoControls && !homeInfo.featuredVideoAutoplay && homeInfo.featuredVideoPreload === 'metadata';
+  checks.push({ profile: profile.name, ...homeInfo, overflow: homeInfo.scrollWidth > homeInfo.clientWidth + 1, valid: homeInfo.title === '准备好开启你的机器人竞技之旅了吗？' && homeInfo.programCount === 3 && homeInfo.dotCount === 5 && homeInfo.activeDot === '2' && homeInfo.activeHero === '/assets/home/hero-robotvex.png' && ratioValid && homeInfo.heroAligned && homeInfo.firstHeroLoaded && homeInfo.programImagesLoaded && homeInfo.homeHref === '#/home' && featuredVideoValid && homeInfo.heroHrefs.join('|') === expectedHeroHrefs.join('|') && homeInfo.heroActions.join('|') === expectedHeroActions.join('|') && homeInfo.partnerHrefs.join('|') === expectedPartnerHrefs.join('|') && homeInfo.partnerImageSrcs.join('|') === expectedPartnerImageSrcs.join('|') && homeInfo.platformHrefs.join('|') === expectedPlatformHrefs.join('|') && homeInfo.logoHrefs.join('|') === expectedLogoHrefs.join('|') && homeInfo.scrollWidth <= homeInfo.clientWidth + 1 });
   await context.close();
 }
 
@@ -506,7 +514,7 @@ await adminPage.getByRole('link', { name: '查看完整资料' }).click();
 await adminPage.getByRole('heading', { name: '注册与账户信息' }).waitFor({ state: 'visible' });
 const adminUserDetailText = await adminPage.locator('.portal-main').innerText();
 const adminUserAccountCard = adminPage.locator('.card').filter({ has: adminPage.getByRole('heading', { name: '注册与账户信息' }) });
-const promoteUserButton = adminUserAccountCard.getByRole('button', { name: '提升为管理员', exact: true });
+const promoteUserButton = adminUserAccountCard.getByRole('button', { name: '添加为管理员', exact: true });
 const promoteUserButtonVisible = await promoteUserButton.isVisible();
 const roleButtonAtAccountBottomRight = await adminUserAccountCard.evaluate((card) => {
   const button = card.querySelector('[data-action="change-user-role"]');
@@ -516,7 +524,7 @@ const roleButtonAtAccountBottomRight = await adminUserAccountCard.evaluate((card
   return buttonBox.bottom > cardBox.top + cardBox.height * .75 && cardBox.right - buttonBox.right < 48;
 });
 await adminPage.screenshot({ path: `${output}/desktop-admin-user-detail.png`, fullPage: true });
-const adminUserDetailValid = ['注册与账户信息','账号权限','普通用户','注册战队','参赛赛项','教练员','学生 / 队员','demo@ruibude.local','XN-2401'].every((text) => adminUserDetailText.includes(text));
+const adminUserDetailValid = ['注册与账户信息','账号权限','普通用户','管理员权限','添加为管理员','注册战队','参赛赛项','教练员','学生 / 队员','demo@ruibude.local','XN-2401'].every((text) => adminUserDetailText.includes(text));
 checks.push({ profile: 'admin-users', rows: adminUserRows, navVisible: adminUserNavVisible, detailValid: adminUserDetailValid, roleButtonVisible: promoteUserButtonVisible, roleButtonAtAccountBottomRight, overflow: await adminPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1), valid: adminUserRows === 1 && adminUserNavVisible && adminUserDetailValid && promoteUserButtonVisible && roleButtonAtAccountBottomRight });
 await adminPage.setViewportSize({ width: 375, height: 812 });
 await adminPage.goto(`${base}/#/admin/users?q=${encodeURIComponent('张小航')}`, { waitUntil: 'networkidle' });
