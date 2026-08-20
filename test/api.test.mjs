@@ -187,6 +187,20 @@ test('公开赛事按未开始优先排序并提供安全响应头', async () =>
   } finally { await app.close(); }
 });
 
+test('MP4 静态资源支持 Safari 所需的字节范围读取', async () => {
+  const app = await setup();
+  try {
+    const response = await fetch(`${app.base}/assets/home/recf-tarek-shraibati-congratulations.mp4`, {
+      headers: { Range: 'bytes=0-1023' },
+    });
+    assert.equal(response.status, 206);
+    assert.equal(response.headers.get('accept-ranges'), 'bytes');
+    assert.match(response.headers.get('content-range'), /^bytes 0-1023\/\d+$/);
+    assert.equal(Number(response.headers.get('content-length')), 1024);
+    assert.equal((await response.arrayBuffer()).byteLength, 1024);
+  } finally { await app.close(); }
+});
+
 test('管理员赛事管理按未开始、开赛时间、名称与 ID 升序排列', async () => {
   const app = await setup();
   const admin = client(app.base);

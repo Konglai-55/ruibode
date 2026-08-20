@@ -2150,7 +2150,33 @@ async function serveStatic(req, res, url, uploadDir = UPLOAD_DIR, appDb) {
       headers['Cross-Origin-Resource-Policy'] = 'same-origin';
       res.removeHeader('X-Frame-Options');
     }
-    res.writeHead(200, headers);
+    const range = req.headers.range;
+    const isMedia = /^video\//.test(headers['Content-Type']) || /^audio\//.test(headers['Content-Type']);
+    if (isMedia) headers['Accept-Ranges'] = 'bytes';
+    if (isMedia && range) {
+      const match = /^bytes=(\d*)-(\d*)$/i.exec(range.trim());
+      if (!match) {
+        res.writeHead(416, { ...headers, 'Content-Range': `bytes */${data.length}` });
+        res.end();
+        return;
+      }
+      const start = match[1] ? Number(match[1]) : 0;
+      const end = match[2] ? Math.min(Number(match[2]), data.length - 1) : data.length - 1;
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= data.length) {
+        res.writeHead(416, { ...headers, 'Content-Range': `bytes */${data.length}` });
+        res.end();
+        return;
+      }
+      const chunk = data.subarray(start, end + 1);
+      res.writeHead(206, {
+        ...headers,
+        'Content-Range': `bytes ${start}-${end}/${data.length}`,
+        'Content-Length': chunk.length,
+      });
+      res.end(chunk);
+      return;
+    }
+    res.writeHead(200, { ...headers, 'Content-Length': data.length });
     res.end(data);
   } catch {
     if (!pathname.startsWith('/api/') && !pathname.includes('.')) {
@@ -2177,7 +2203,7 @@ export async function createApplication({
     res.setHeader('X-Frame-Options', 'SAMEORIGIN');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data: blob:; style-src 'self'; script-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self'; script-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'");
     if (process.env.NODE_ENV === 'production') res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     try {

@@ -100,8 +100,13 @@ for (const profile of [
       homeHref: document.querySelector('.desktop-nav a[href="#/home"], .mobile-drawer a[href="#/home"]')?.getAttribute('href'),
       featuredVideoTitle: document.querySelector('.home-featured-video-head h2')?.textContent?.trim(),
       featuredVideoSrc: featuredVideo?.querySelector('source')?.getAttribute('src'),
+      featuredVideoDataSrc: featuredVideo?.dataset.videoSrc,
       featuredVideoPoster: featuredVideo?.getAttribute('poster'),
       featuredVideoControls: featuredVideo?.controls,
+      featuredVideoControlsList: featuredVideo?.getAttribute('controlslist'),
+      featuredVideoPictureInPictureDisabled: featuredVideo?.hasAttribute('disablepictureinpicture'),
+      featuredVideoFallbackLinks: document.querySelectorAll('.home-featured-video a').length,
+      featuredVideoWidth: Math.round(featuredVideo?.getBoundingClientRect().width || 0),
       featuredVideoAutoplay: featuredVideo?.autoplay,
       featuredVideoPreload: featuredVideo?.preload,
     };
@@ -113,8 +118,19 @@ for (const profile of [
   const expectedPartnerImageSrcs = ['/assets/recf-header-logo.png', '/assets/home/partner-coding-logo.png', '/assets/ruibude-logo.jpg'];
   const expectedPlatformHrefs = ['/assets/home/drone-competition.mp4', '/assets/home/drone-competition.mp4'];
   const expectedLogoHrefs = ['https://recf.org/about-us/our-partners/', 'http://www.robotvex.com/'];
-  const featuredVideoValid = homeInfo.featuredVideoTitle === '【重磅官宣】RECF国际副总裁Tarek Shraibati致贺词：正式确认上海瑞卜德教育科技有限公司为中国官方国际代表' && homeInfo.featuredVideoSrc === '/assets/home/recf-tarek-shraibati-congratulations.mp4' && homeInfo.featuredVideoPoster === '/assets/home/recf-tarek-shraibati-congratulations-poster.jpg' && homeInfo.featuredVideoControls && !homeInfo.featuredVideoAutoplay && homeInfo.featuredVideoPreload === 'metadata';
-  checks.push({ profile: profile.name, ...homeInfo, overflow: homeInfo.scrollWidth > homeInfo.clientWidth + 1, valid: homeInfo.title === '准备好开启你的机器人竞技之旅了吗？' && homeInfo.programCount === 3 && homeInfo.dotCount === 5 && homeInfo.activeDot === '2' && homeInfo.activeHero === '/assets/home/hero-robotvex.png' && ratioValid && homeInfo.heroAligned && homeInfo.firstHeroLoaded && homeInfo.programImagesLoaded && homeInfo.homeHref === '#/home' && featuredVideoValid && homeInfo.heroHrefs.join('|') === expectedHeroHrefs.join('|') && homeInfo.heroActions.join('|') === expectedHeroActions.join('|') && homeInfo.partnerHrefs.join('|') === expectedPartnerHrefs.join('|') && homeInfo.partnerImageSrcs.join('|') === expectedPartnerImageSrcs.join('|') && homeInfo.platformHrefs.join('|') === expectedPlatformHrefs.join('|') && homeInfo.logoHrefs.join('|') === expectedLogoHrefs.join('|') && homeInfo.scrollWidth <= homeInfo.clientWidth + 1 });
+  const blobVideoState = await page.evaluate(async () => {
+    const video = document.querySelector('.home-featured-video video');
+    video.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    await new Promise((resolve) => {
+      const deadline = Date.now() + 10_000;
+      const timer = setInterval(() => {
+        if (video.dataset.blobReady === 'true' || Date.now() >= deadline) { clearInterval(timer); resolve(); }
+      }, 50);
+    });
+    return { ready: video.dataset.blobReady === 'true', src: video.currentSrc || video.src };
+  });
+  const featuredVideoValid = homeInfo.featuredVideoTitle === '美国RECF国际副总裁Tarek Shraibati致贺词：正式确认上海瑞卜德教育科技有限公司为中国官方国际代表' && !homeInfo.featuredVideoSrc && homeInfo.featuredVideoDataSrc === '/assets/home/recf-tarek-shraibati-congratulations.mp4' && homeInfo.featuredVideoPoster === '/assets/home/recf-tarek-shraibati-congratulations-poster.jpg' && homeInfo.featuredVideoControls && homeInfo.featuredVideoControlsList === 'nodownload' && homeInfo.featuredVideoPictureInPictureDisabled && homeInfo.featuredVideoFallbackLinks === 0 && Math.abs(homeInfo.featuredVideoWidth - homeInfo.introWidth) <= 1 && !homeInfo.featuredVideoAutoplay && homeInfo.featuredVideoPreload === 'none' && blobVideoState.ready && blobVideoState.src.startsWith('blob:');
+  checks.push({ profile: profile.name, ...homeInfo, blobVideoState, overflow: homeInfo.scrollWidth > homeInfo.clientWidth + 1, valid: homeInfo.title === '准备好开启你的机器人竞技之旅了吗？' && homeInfo.programCount === 3 && homeInfo.dotCount === 5 && homeInfo.activeDot === '2' && homeInfo.activeHero === '/assets/home/hero-robotvex.png' && ratioValid && homeInfo.heroAligned && homeInfo.firstHeroLoaded && homeInfo.programImagesLoaded && homeInfo.homeHref === '#/home' && featuredVideoValid && homeInfo.heroHrefs.join('|') === expectedHeroHrefs.join('|') && homeInfo.heroActions.join('|') === expectedHeroActions.join('|') && homeInfo.partnerHrefs.join('|') === expectedPartnerHrefs.join('|') && homeInfo.partnerImageSrcs.join('|') === expectedPartnerImageSrcs.join('|') && homeInfo.platformHrefs.join('|') === expectedPlatformHrefs.join('|') && homeInfo.logoHrefs.join('|') === expectedLogoHrefs.join('|') && homeInfo.scrollWidth <= homeInfo.clientWidth + 1 });
   await context.close();
 }
 

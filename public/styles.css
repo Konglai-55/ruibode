@@ -136,10 +136,10 @@ svg { flex: 0 0 auto; }
 .home-intro-block { padding-top: 62px; }
 .home-blue-panel { overflow: hidden; background: #1d3d66 url("/assets/home/blue-panel-bg.png") center / cover no-repeat; }
 .home-featured-video-block { padding-top: 36px; }
-.home-featured-video { width: min(100%, 1040px); margin: 0 auto; overflow: hidden; border: 1px solid var(--border-light); border-top: 4px solid var(--primary); border-radius: 4px; background: #fff; }
-.home-featured-video-head { padding: 22px 26px 20px; }
-.home-featured-video-head span { display: block; margin-bottom: 6px; color: var(--primary); font-size: 14px; font-weight: 700; }
-.home-featured-video-head h2 { margin: 0; color: var(--foreground); font-size: clamp(20px, 2.1vw, 28px); line-height: 1.45; }
+.home-featured-video { width: 100%; margin: 0 auto; border-radius: 4px; }
+.home-featured-video-head { padding: 20px 26px 18px; color: #fff; }
+.home-featured-video-head span { display: block; margin-bottom: 6px; color: rgba(255,255,255,.78); font-size: 13px; font-weight: 700; }
+.home-featured-video-head h2 { margin: 0; color: #fff; font-size: clamp(18px, 1.65vw, 23px); line-height: 1.5; font-weight: 600; }
 .home-featured-video-frame { aspect-ratio: 16 / 9; background: #111; }
 .home-featured-video-frame video { display: block; width: 100%; height: 100%; object-fit: contain; }
 .home-intro-panel { min-height: 430px; display: grid; place-items: center; padding: 44px 92px; }
@@ -710,8 +710,8 @@ textarea.form-control { min-height: 120px; resize: vertical; }
   .home-hero-dots { bottom: 10px; gap: 7px; }
   .home-hero-dots button { width: 10px; height: 10px; }
   .home-featured-video-block { padding-top: 24px; }
-  .home-featured-video-head { padding: 17px 16px 15px; }
-  .home-featured-video-head h2 { font-size: 19px; line-height: 1.5; }
+  .home-featured-video-head { padding: 16px 16px 14px; }
+  .home-featured-video-head h2 { font-size: 17px; line-height: 1.55; }
   .home-intro-panel { padding: 18px 12px; }
   .home-intro-copy { padding: 24px 15px; }
   .home-intro-copy h1 { margin-bottom: 18px; font-size: 27px; }

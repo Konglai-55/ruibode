@@ -372,6 +372,55 @@ function toast(message, type = 'success', duration) {
   setTimeout(() => node.remove(), displayDuration);
 }
 
+async function prepareBlobVideo(video) {
+  if (video.dataset.blobReady === 'true' || video.dataset.blobLoading === 'true') return video.dataset.blobReady === 'true';
+  const sourceUrl = video.dataset.videoSrc;
+  if (!sourceUrl) return false;
+  video.dataset.blobLoading = 'true';
+  try {
+    const response = await fetch(sourceUrl, { credentials: 'same-origin', cache: 'force-cache' });
+    if (!response.ok) throw new Error('视频资源加载失败');
+    const blobUrl = URL.createObjectURL(await response.blob());
+    video.src = blobUrl;
+    video.dataset.blobReady = 'true';
+    video.dataset.blobUrl = blobUrl;
+    video.load();
+    return true;
+  } catch (error) {
+    toast('视频加载失败，请稍后重试', 'error');
+    return false;
+  } finally {
+    delete video.dataset.blobLoading;
+  }
+}
+
+function isAppleMobileBrowser() {
+  const ua = navigator.userAgent || '';
+  return /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function prepareNativeVideo(video) {
+  if (video.dataset.nativeReady === 'true') return true;
+  const sourceUrl = video.dataset.videoSrc;
+  if (!sourceUrl) return false;
+  video.src = sourceUrl;
+  video.dataset.nativeReady = 'true';
+  video.load();
+  return true;
+}
+
+async function startProtectedVideo(video) {
+  if (video.dataset.blobReady === 'true' || video.dataset.nativeReady === 'true') return;
+  // iOS Safari may reject play() once an asynchronous Blob fetch has completed,
+  // because it is no longer considered a user-initiated action. Keep its first
+  // tap in the native media pipeline so the standard controls remain reliable.
+  if (isAppleMobileBrowser()) {
+    if (prepareNativeVideo(video)) video.play().catch(() => {});
+    return;
+  }
+  if (await prepareBlobVideo(video)) video.play().catch(() => {});
+}
+
 function setLoading(button, loading, label = '处理中…') {
   if (!button) return;
   if (loading) { button.dataset.label = button.innerHTML; button.disabled = true; button.innerHTML = `<span class="spinner spinner-small"></span>${label}`; }
@@ -737,7 +786,7 @@ function homePage() {
   const droneVideoUrl = '/assets/home/drone-competition.mp4';
   const announcementVideoUrl = '/assets/home/recf-tarek-shraibati-congratulations.mp4';
   const announcementVideoPoster = '/assets/home/recf-tarek-shraibati-congratulations-poster.jpg';
-  const announcementVideoTitle = '【重磅官宣】RECF国际副总裁Tarek Shraibati致贺词：正式确认上海瑞卜德教育科技有限公司为中国官方国际代表';
+  const announcementVideoTitle = '美国RECF国际副总裁Tarek Shraibati致贺词：正式确认上海瑞卜德教育科技有限公司为中国官方国际代表';
   const recfPartnerUrl = 'https://recf.org/about-us/our-partners/';
   const robotVexBannerUrl = 'http://robotvex.com/';
   const robotVexUrl = 'http://www.robotvex.com/';
@@ -774,15 +823,14 @@ function homePage() {
     </div>
     <div class="home-block home-featured-video-block">
       <div class="container">
-        <article class="home-featured-video" aria-labelledby="home-announcement-video-title">
+        <article class="home-blue-panel home-featured-video" aria-labelledby="home-announcement-video-title">
           <header class="home-featured-video-head">
             <span>官方视频</span>
             <h2 id="home-announcement-video-title">${escapeHtml(announcementVideoTitle)}</h2>
           </header>
           <div class="home-featured-video-frame">
-            <video controls playsinline preload="metadata" poster="${announcementVideoPoster}" aria-label="${escapeHtml(announcementVideoTitle)}" width="1280" height="720">
-              <source src="${announcementVideoUrl}" type="video/mp4">
-              您的浏览器暂不支持视频播放，可<a href="${announcementVideoUrl}">下载视频</a>后观看。
+            <video controls controlslist="nodownload" disablepictureinpicture playsinline preload="none" poster="${announcementVideoPoster}" aria-label="${escapeHtml(announcementVideoTitle)}" data-protected-media data-video-src="${announcementVideoUrl}" width="1280" height="720">
+              您的浏览器暂不支持视频播放。
             </video>
           </div>
         </article>
@@ -1784,6 +1832,9 @@ async function changeUserRole(button) {
 document.addEventListener('input',(event)=>{const editor=event.target.closest('[data-markdown-visual]');if(editor)syncVisualMarkdown(editor);const registerForm=event.target.closest('[data-form="register"]');if(registerForm){if(event.target.name==='email'&&registerForm.dataset.codeSentEmail&&event.target.value!==registerForm.dataset.codeSentEmail){delete registerForm.dataset.codeSentEmail;delete registerForm.dataset.codeSentAt;registerForm.elements.code.value='';const captcha=$('[data-captcha-field]',registerForm);if(captcha)captcha.hidden=false;registerForm.elements.captcha.disabled=false;registerForm.elements.captcha.required=true;registerForm.elements.captchaId.disabled=false;const notice=$('[data-registration-code-status]',registerForm);if(notice)notice.hidden=true;refreshCaptcha(registerForm).catch(()=>{});}saveRegistrationDraft(registerForm);}if(event.target.name==='number'&&event.target.closest('[data-form="team"],[data-form="admin-team"]'))syncTeamNumberField(event.target.form);if(['registration_end','refund_deadline_days'].includes(event.target.name)&&event.target.closest('[data-form="admin-event"]'))syncAdminRefundDeadline(event.target.form);});
 document.addEventListener('keydown',(event)=>{const editor=event.target.closest('[data-markdown-visual]');if(!editor||!(event.ctrlKey||event.metaKey))return;const format=event.key.toLowerCase()==='b'?'bold':event.key.toLowerCase()==='i'?'italic':'';if(!format)return;event.preventDefault();applyMarkdownFormat(editor.closest('.markdown-editor').querySelector(`[data-format="${format}"]`));});
 document.addEventListener('pointerdown',(event)=>{if(event.target.closest('.markdown-tool'))event.preventDefault();});
+document.addEventListener('contextmenu',(event)=>{if(event.target.closest('[data-protected-media]'))event.preventDefault();});
+document.addEventListener('pointerdown',(event)=>{const video=event.target;if(!(video instanceof HTMLVideoElement)||!video.matches('[data-protected-media][data-video-src]')||video.dataset.blobReady==='true'||video.dataset.nativeReady==='true')return;startProtectedVideo(video);},true);
+document.addEventListener('play',(event)=>{const video=event.target;if(!(video instanceof HTMLVideoElement)||!video.matches('[data-protected-media][data-video-src]')||video.dataset.blobReady==='true'||video.dataset.nativeReady==='true')return;video.pause();startProtectedVideo(video);},true);
 document.addEventListener('paste',async(event)=>{const editor=event.target.closest('[data-markdown-visual]');if(!editor)return;const items=[...(event.clipboardData?.items||[])];const imageFiles=items.filter((item)=>item.kind==='file'&&item.type.startsWith('image/')).map((item)=>item.getAsFile()).filter(Boolean);event.preventDefault();if(imageFiles.length){rememberVisualSelection(editor);for(const file of imageFiles)await uploadMarkdownImageFile(editor,file);return;}document.execCommand('insertText',false,event.clipboardData?.getData('text/plain')||'');syncVisualMarkdown(editor);});
 document.addEventListener('selectionchange',()=>{const selection=window.getSelection();const anchor=selection?.anchorNode?.nodeType===Node.ELEMENT_NODE?selection.anchorNode:selection?.anchorNode?.parentElement;const editor=anchor?.closest?.('[data-markdown-visual]');if(editor){rememberVisualSelection(editor);updateVisualToolbar(editor);}});
 document.addEventListener('submit',(event)=>{
