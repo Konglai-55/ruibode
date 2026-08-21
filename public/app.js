@@ -1475,7 +1475,8 @@ async function adminTeamsPage() {
 
 function adminUserActions(user, query = '') {
   const suffix = query ? `?q=${encodeURIComponent(query)}` : '';
-  return `<a class="button button-secondary button-small" href="#/admin/users/${user.id}${suffix}">${icon('eye',16)}查看完整资料</a>`;
+  const canDelete = Number(user.id) !== Number(state.user?.id) && normalizedAdminLevel(user) !== 'super';
+  return `<a class="button button-secondary button-small" href="#/admin/users/${user.id}${suffix}">${icon('eye',16)}查看完整资料</a>${canDelete ? `<button class="button button-danger-ghost button-small" type="button" data-action="delete-admin-user" data-id="${user.id}" data-label="${escapeHtml(user.username)}">${icon('trash',16)}删除用户</button>` : ''}`;
 }
 
 function normalizedAdminLevel(user) {
@@ -1518,7 +1519,9 @@ function adminUserRolePanel(user) {
     : level === 'mid'
       ? '该账号拥有现有管理后台权限；最高管理员可以将其提升为最高管理员。'
       : '添加后，该账号将获得中级管理员权限，可使用现有管理后台功能。';
-  return `<section class="user-role-panel" aria-label="管理员权限操作"><div class="user-role-panel-copy"><strong>账号权限：${userRoleLabel(user)}</strong><p>${description}</p></div><div class="user-role-actions">${adminUserRoleAction(user)}</div></section>`;
+  const canDelete = Number(user.id) !== Number(state.user?.id) && normalizedAdminLevel(user) !== 'super';
+  const deleteButton = canDelete ? `<button class="button button-danger-ghost" type="button" data-action="delete-admin-user" data-id="${user.id}" data-label="${escapeHtml(user.username)}">${icon('trash',17)}删除用户</button>` : '';
+  return `<section class="user-role-panel" aria-label="管理员权限操作"><div class="user-role-panel-copy"><strong>账号权限：${userRoleLabel(user)}</strong><p>${description}</p></div><div class="user-role-actions">${adminUserRoleAction(user)}${deleteButton}</div></section>`;
 }
 
 async function adminUsersPage() {
@@ -1820,6 +1823,8 @@ async function deleteAdminEvent(id,label='该赛事') { const ok=await confirmAc
 
 async function deleteAdminTeam(id,label) { const ok=await confirmAction('删除已有战队',`仅没有参赛记录的战队可删除。确定删除“${label}”吗？此操作不可恢复。`);if(!ok)return;try{const result=await apiFetch(`/api/admin/teams/${id}`,{method:'DELETE'});toast(result.message);await render();}catch(error){toast(error.message,'error');} }
 
+async function deleteAdminUser(id,label) { const ok=await confirmAction('删除用户',`确定删除“${label}”及其关联的战队、教练、学生和报名记录吗？此操作不可恢复。`,'确认删除用户');if(!ok)return;try{const result=await apiFetch(`/api/admin/users/${id}`,{method:'DELETE'});toast(result.message);go('/admin/users');}catch(error){toast(error.message,'error');} }
+
 function confirmUserRoleChange(username, nextLevel) {
   const promoting = nextLevel !== 'none';
   const levelLabel = nextLevel === 'super' ? '最高管理员' : nextLevel === 'mid' ? '中级管理员' : '普通用户';
@@ -1929,6 +1934,7 @@ document.addEventListener('click',async(event)=>{
   if(action==='delete-activity-application')await deleteActivityApplication(Number(target.dataset.id));
   if(action==='delete-admin-event')await deleteAdminEvent(Number(target.dataset.id),target.dataset.label);
   if(action==='delete-admin-team')await deleteAdminTeam(Number(target.dataset.id),target.dataset.label||'该战队');
+  if(action==='delete-admin-user')await deleteAdminUser(Number(target.dataset.id),target.dataset.label||'该用户');
   if(action==='change-user-role')await changeUserRole(target);
   if(action==='clear-upload')clearUpload(target);
   if(action==='review-open')reviewModal(Number(target.dataset.id),target.dataset.status);

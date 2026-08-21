@@ -1980,6 +1980,29 @@ async function api(req, res, url, appDb, uploadDir) {
       user: { id: result.target.id, role: result.target.role, admin_level: result.target.admin_level },
     });
   }
+  if ((params=matchRoute(path,'/api/admin/users/:id')) && method==='DELETE') {
+    const actor = auth(req, appDb, 'admin');
+    const id = Number(params.id);
+    if (!Number.isInteger(id) || id <= 0) throw fail(422, '用户编号无效');
+    const result = withTransaction(db, () => {
+      const target = db.prepare('SELECT id,username,role,admin_level FROM users WHERE id=?').get(id);
+      if (!target) throw fail(404, '未找到该用户');
+      if (actor.id === id) throw fail(409, '不能删除当前登录账号');
+      if (target.role === 'admin' && target.admin_level === 'super') {
+        throw fail(403, '最高管理员账号受保护，不能删除');
+      }
+      // Clear nullable audit references before removing the user, then remove
+      // registrations first because their team FK predates cascade support.
+      db.prepare('UPDATE events SET created_by=NULL WHERE created_by=?').run(id);
+      db.prepare('UPDATE registrations SET reviewed_by=NULL,refund_reviewed_by=NULL WHERE reviewed_by=? OR refund_reviewed_by=?').run(id, id);
+      db.prepare('UPDATE activity_applications SET reviewed_by=NULL WHERE reviewed_by=?').run(id);
+      db.prepare('DELETE FROM registrations WHERE user_id=?').run(id);
+      db.prepare('DELETE FROM activity_applications WHERE user_id=?').run(id);
+      db.prepare('DELETE FROM users WHERE id=?').run(id);
+      return target;
+    });
+    return json(res, 200, { message: `用户“${result.username}”及其关联资料已删除` });
+  }
   if ((params=matchRoute(path,'/api/admin/users/:id')) && method==='GET') {
     auth(req, appDb, 'admin');
     return json(res, 200, { user: adminUserDetails(db, Number(params.id)) });

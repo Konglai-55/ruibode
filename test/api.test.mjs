@@ -619,6 +619,12 @@ test('管理员可搜索审核与已有战队，已结束赛事自动移出审�
     assert.equal(app.db.prepare('SELECT COUNT(*) count FROM events WHERE id=?').get(endedEvent.id).count, 0);
     assert.equal(app.db.prepare('SELECT COUNT(*) count FROM registrations WHERE event_id=?').get(endedEvent.id).count, 0);
     assert.equal(app.db.prepare('SELECT COUNT(*) count FROM activity_applications WHERE event_id=?').get(endedEvent.id).count, 0);
+    const blockedDeleteSelf = await admin.request(`/api/admin/users/${currentAdmin.id}`, { method: 'DELETE' });
+    assert.equal(blockedDeleteSelf.response.status, 409);
+    const deletedUser = await admin.request(`/api/admin/users/${team.user_id}`, { method: 'DELETE' });
+    assert.equal(deletedUser.response.status, 200);
+    assert.equal(app.db.prepare('SELECT COUNT(*) count FROM users WHERE id=?').get(team.user_id).count, 0);
+    assert.equal(app.db.prepare('SELECT COUNT(*) count FROM teams WHERE user_id=?').get(team.user_id).count, 0);
   } finally { await app.close(); }
 });
 
