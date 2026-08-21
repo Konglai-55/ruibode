@@ -1478,25 +1478,47 @@ function adminUserActions(user, query = '') {
   return `<a class="button button-secondary button-small" href="#/admin/users/${user.id}${suffix}">${icon('eye',16)}查看完整资料</a>`;
 }
 
-function userRoleBadge(role) {
-  return `<span class="badge ${role === 'admin' ? 'badge-admin' : 'badge-user'}">${role === 'admin' ? '管理员' : '普通用户'}</span>`;
+function normalizedAdminLevel(user) {
+  return user?.role === 'admin' ? (user.admin_level === 'super' ? 'super' : 'mid') : 'none';
+}
+
+function userRoleLabel(user) {
+  const level = normalizedAdminLevel(user);
+  return level === 'super' ? '最高管理员' : level === 'mid' ? '中级管理员' : '普通用户';
+}
+
+function userRoleBadge(user) {
+  const level = normalizedAdminLevel(user);
+  const className = level === 'super' ? 'badge-super-admin' : level === 'mid' ? 'badge-admin' : 'badge-user';
+  return `<span class="badge ${className}">${userRoleLabel(user)}</span>`;
 }
 
 function adminUserRoleAction(user) {
-  if (user.role === 'admin' && Number(user.id) === Number(state.user?.id)) {
-    return '<span class="muted current-admin-note">当前登录管理员不能降低自己的权限</span>';
+  const targetLevel = normalizedAdminLevel(user);
+  const actorLevel = normalizedAdminLevel(state.user);
+  if (Number(user.id) === Number(state.user?.id)) {
+    return '<span class="muted current-admin-note">当前登录账号不能修改自己的权限</span>';
   }
-  const nextRole = user.role === 'admin' ? 'user' : 'admin';
-  const label = nextRole === 'admin' ? '添加为管理员' : '撤销管理员';
-  const buttonClass = nextRole === 'admin' ? 'button-primary' : 'button-danger-ghost';
-  return `<button class="button ${buttonClass}" type="button" data-action="change-user-role" data-id="${user.id}" data-role="${nextRole}" data-username="${escapeHtml(user.username)}">${icon('shield',17)}${label}</button>`;
+  if (targetLevel === 'super' && actorLevel !== 'super') {
+    return '<span class="muted current-admin-note">最高管理员权限受保护</span>';
+  }
+  const button = (level,label,className='button-secondary') => `<button class="button ${className}" type="button" data-action="change-user-role" data-id="${user.id}" data-admin-level="${level}" data-username="${escapeHtml(user.username)}">${icon('shield',17)}${label}</button>`;
+  if (targetLevel === 'none') return button('mid','添加为中级管理员','button-primary');
+  if (targetLevel === 'mid') {
+    const promote = actorLevel === 'super' ? button('super','提升为最高管理员','button-primary') : '';
+    return `${promote}${button('none','撤销管理员','button-danger-ghost')}`;
+  }
+  return button('mid','降为中级管理员','button-danger-ghost');
 }
 
 function adminUserRolePanel(user) {
-  const description = user.role === 'admin'
-    ? '该账号当前可以进入管理后台并管理赛事、用户、战队及报名审核。'
-    : '添加后，该账号将获得管理后台的全部管理员权限。';
-  return `<section class="user-role-panel" aria-label="管理员权限操作"><div class="user-role-panel-copy"><strong>管理员权限</strong><p>${description}</p></div><div class="user-role-actions">${adminUserRoleAction(user)}</div></section>`;
+  const level = normalizedAdminLevel(user);
+  const description = level === 'super'
+    ? '该账号拥有最高管理员权限；中级管理员不能撤销其权限。'
+    : level === 'mid'
+      ? '该账号拥有现有管理后台权限；最高管理员可以将其提升为最高管理员。'
+      : '添加后，该账号将获得中级管理员权限，可使用现有管理后台功能。';
+  return `<section class="user-role-panel" aria-label="管理员权限操作"><div class="user-role-panel-copy"><strong>账号权限：${userRoleLabel(user)}</strong><p>${description}</p></div><div class="user-role-actions">${adminUserRoleAction(user)}</div></section>`;
 }
 
 async function adminUsersPage() {
@@ -1506,8 +1528,8 @@ async function adminUsersPage() {
   if (query) params.set('q', query);
   const { users } = await apiFetch(`/api/admin/users${params.size ? `?${params}` : ''}`);
   const search = adminSearchForm(query, '搜索用户名、昵称、邮箱、战队编号/名称、教练员或学生姓名');
-  const resultNote = `<div class="result-note" aria-live="polite"><span>${query ? `找到 ${users.length} 个匹配用户` : `共 ${users.length} 个用户账号`}</span><small>包含普通用户与管理员账号</small></div>`;
-  const content = `${search}${resultNote}${users.length ? `<div class="desktop-table data-table-wrap"><table class="data-table admin-user-table"><thead><tr><th>用户</th><th>权限</th><th>邮箱 / 手机号</th><th>单位</th><th>关联资料</th><th>注册时间</th><th>操作</th></tr></thead><tbody>${users.map((user)=>`<tr><td><strong>${escapeHtml(user.username)}</strong><br><small class="muted">${escapeHtml(user.nickname || '未填写昵称')}</small></td><td>${userRoleBadge(user.role)}</td><td>${escapeHtml(user.email)}<br><small class="muted">${escapeHtml(user.phone || '未填写手机号')}</small></td><td>${escapeHtml(user.org_name || '未填写')}</td><td><span class="nowrap">${user.team_count} 战队 / ${user.coach_count} 教练 / ${user.member_count} 学生</span><br><small class="muted">${user.registration_count} 条参赛报名</small></td><td>${formatDate(user.created_at,true)}</td><td>${adminUserActions(user,query)}</td></tr>`).join('')}</tbody></table></div><div class="mobile-list">${users.map((user)=>`<article class="entity-card"><div class="entity-card-head"><div><span class="record-label">${escapeHtml(user.username)}</span><h3>${escapeHtml(user.nickname || '未填写昵称')}</h3></div>${userRoleBadge(user.role)}</div><dl><div><dt>邮箱</dt><dd>${escapeHtml(user.email)}</dd></div><div><dt>手机号</dt><dd>${escapeHtml(user.phone || '未填写')}</dd></div><div><dt>战队</dt><dd>${user.team_count} 支</dd></div><div><dt>关联人员</dt><dd>${user.coach_count} 名教练 / ${user.member_count} 名学生</dd></div><div><dt>参赛报名</dt><dd>${user.registration_count} 条</dd></div><div><dt>注册时间</dt><dd>${formatDate(user.created_at,true)}</dd></div></dl>${adminUserActions(user,query)}</article>`).join('')}</div>` : `<div class="empty-state"><div class="empty-icon">${icon('user',30)}</div><h3>${query ? '没有匹配的用户' : '尚无用户账号'}</h3><p>${query ? '可搜索用户名、昵称、邮箱、战队、教练员或学生姓名。' : '用户完成注册后会显示在这里。'}</p></div>`}`;
+  const resultNote = `<div class="result-note" aria-live="polite"><span>${query ? `找到 ${users.length} 个匹配用户` : `共 ${users.length} 个用户账号`}</span><small>按最高管理员、中级管理员、普通用户排序</small></div>`;
+  const content = `${search}${resultNote}${users.length ? `<div class="desktop-table data-table-wrap"><table class="data-table admin-user-table"><thead><tr><th>用户</th><th>权限</th><th>邮箱 / 手机号</th><th>单位</th><th>关联资料</th><th>注册时间</th><th>操作</th></tr></thead><tbody>${users.map((user)=>`<tr><td><strong>${escapeHtml(user.username)}</strong><br><small class="muted">${escapeHtml(user.nickname || '未填写昵称')}</small></td><td>${userRoleBadge(user)}</td><td>${escapeHtml(user.email)}<br><small class="muted">${escapeHtml(user.phone || '未填写手机号')}</small></td><td>${escapeHtml(user.org_name || '未填写')}</td><td><span class="nowrap">${user.team_count} 战队 / ${user.coach_count} 教练 / ${user.member_count} 学生</span><br><small class="muted">${user.registration_count} 条参赛报名</small></td><td>${formatDate(user.created_at,true)}</td><td>${adminUserActions(user,query)}</td></tr>`).join('')}</tbody></table></div><div class="mobile-list">${users.map((user)=>`<article class="entity-card"><div class="entity-card-head"><div><span class="record-label">${escapeHtml(user.username)}</span><h3>${escapeHtml(user.nickname || '未填写昵称')}</h3></div>${userRoleBadge(user)}</div><dl><div><dt>邮箱</dt><dd>${escapeHtml(user.email)}</dd></div><div><dt>手机号</dt><dd>${escapeHtml(user.phone || '未填写')}</dd></div><div><dt>战队</dt><dd>${user.team_count} 支</dd></div><div><dt>关联人员</dt><dd>${user.coach_count} 名教练 / ${user.member_count} 名学生</dd></div><div><dt>参赛报名</dt><dd>${user.registration_count} 条</dd></div><div><dt>注册时间</dt><dd>${formatDate(user.created_at,true)}</dd></div></dl>${adminUserActions(user,query)}</article>`).join('')}</div>` : `<div class="empty-state"><div class="empty-icon">${icon('user',30)}</div><h3>${query ? '没有匹配的用户' : '尚无用户账号'}</h3><p>${query ? '可搜索用户名、昵称、邮箱、战队、教练员或学生姓名。' : '用户完成注册后会显示在这里。'}</p></div>`}`;
   app.innerHTML = adminShell('管理用户','查询用户权限及其战队、赛事、教练员和学生资料。',content);
 }
 
@@ -1518,7 +1540,7 @@ async function adminUserDetailPage(id) {
   const backHref = `#/admin/users${query ? `?q=${encodeURIComponent(query)}` : ''}`;
   const names = (items) => items.length ? items.map((item)=>escapeHtml(item.name)).join('、') : '—';
   const metrics = `<div class="summary-grid user-detail-metrics"><div class="summary-card"><span>战队</span><strong>${user.teams.length}</strong></div><div class="summary-card"><span>教练员</span><strong>${user.coaches.length}</strong></div><div class="summary-card"><span>学生</span><strong>${user.members.length}</strong></div><div class="summary-card"><span>参赛报名</span><strong>${user.registrations.length}</strong></div></div>`;
-  const account = `<div class="card"><div class="card-header"><h2>注册与账户信息</h2><span class="record-label">用户 ID ${user.id}</span></div><div class="card-body">${detailRows([['用户名',user.username],['昵称',user.nickname],['账号权限',user.role === 'admin' ? '管理员' : '普通用户'],['邮箱',user.email],['注册手机号',user.phone],['联系人',user.contact_name],['身份证号码',user.id_number],['单位名称',user.org_name],['单位地址',user.org_address],['单位简介',user.org_intro],['注册时间',formatDate(user.created_at,true)]])}${adminUserRolePanel(user)}</div></div>`;
+  const account = `<div class="card"><div class="card-header"><h2>注册与账户信息</h2><span class="record-label">用户 ID ${user.id}</span></div><div class="card-body">${detailRows([['用户名',user.username],['昵称',user.nickname],['账号权限',userRoleLabel(user)],['邮箱',user.email],['注册手机号',user.phone],['联系人',user.contact_name],['身份证号码',user.id_number],['单位名称',user.org_name],['单位地址',user.org_address],['单位简介',user.org_intro],['注册时间',formatDate(user.created_at,true)]])}${adminUserRolePanel(user)}</div></div>`;
   const teams = `<div class="card card-stack"><div class="card-header"><h2>注册战队</h2><span class="muted">${user.teams.length} 支</span></div><div class="card-body">${user.teams.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>战队</th><th>组别</th><th>学校/机构</th><th>教练员</th><th>学生</th></tr></thead><tbody>${user.teams.map((team)=>`<tr><td><strong>${escapeHtml(team.number)}</strong><br><small class="muted">${escapeHtml(team.name)}</small></td><td>${escapeHtml(team.group_name)}</td><td>${escapeHtml(team.school_name)}</td><td>${names(team.coaches)}</td><td>${names(team.members)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">该用户尚未创建战队。</p>'}</div></div>`;
   const registrations = `<div class="card card-stack"><div class="card-header"><h2>参赛赛项</h2><span class="muted">${user.registrations.length} 条</span></div><div class="card-body">${user.registrations.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>赛事</th><th>参赛战队</th><th>组别</th><th>状态</th><th>提交时间</th></tr></thead><tbody>${user.registrations.map((registration)=>`<tr><td><a href="#/events/${registration.event_id}">${escapeHtml(registration.event_title)}</a><br><small class="muted">${formatDate(registration.starts_at)} — ${formatDate(registration.ends_at)}</small></td><td>${escapeHtml(registration.team_number)} · ${escapeHtml(registration.team_name)}</td><td>${escapeHtml(registration.group_name)}</td><td>${badge(reviewStatusMeta(registration.status))}</td><td>${formatDate(registration.created_at,true)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">该用户尚无参赛报名。</p>'}</div></div>`;
   const coaches = `<div class="card card-stack"><div class="card-header"><h2>教练员</h2><span class="muted">${user.coaches.length} 名</span></div><div class="card-body">${user.coaches.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>姓名</th><th>性别</th><th>电话</th><th>单位</th><th>邮箱</th><th>地区 / 国籍</th></tr></thead><tbody>${user.coaches.map((coach)=>`<tr><td>${escapeHtml(coach.name)}</td><td>${escapeHtml(coach.gender)}</td><td>${escapeHtml(coach.phone)}</td><td>${escapeHtml(coach.org_name)}</td><td>${escapeHtml(coach.email)}</td><td>${escapeHtml([coach.province,coach.city,coach.nationality].filter(Boolean).join(' / '))}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">该用户尚未添加教练员。</p>'}</div></div>`;
@@ -1798,29 +1820,32 @@ async function deleteAdminEvent(id,label='该赛事') { const ok=await confirmAc
 
 async function deleteAdminTeam(id,label) { const ok=await confirmAction('删除已有战队',`仅没有参赛记录的战队可删除。确定删除“${label}”吗？此操作不可恢复。`);if(!ok)return;try{const result=await apiFetch(`/api/admin/teams/${id}`,{method:'DELETE'});toast(result.message);await render();}catch(error){toast(error.message,'error');} }
 
-function confirmUserRoleChange(username, nextRole) {
-  const promoting = nextRole === 'admin';
-  const title = promoting ? '添加为管理员' : '撤销管理员';
-  const message = promoting
-    ? `添加后，“${username}”将可以管理赛事、用户、战队及报名审核。`
-    : `撤销后，“${username}”将失去管理后台权限，但原有报名资料会保留。`;
+function confirmUserRoleChange(username, nextLevel) {
+  const promoting = nextLevel !== 'none';
+  const levelLabel = nextLevel === 'super' ? '最高管理员' : nextLevel === 'mid' ? '中级管理员' : '普通用户';
+  const title = nextLevel === 'none' ? '撤销管理员' : `设为${levelLabel}`;
+  const message = nextLevel === 'none'
+    ? `撤销后，“${username}”将失去管理后台权限，但原有报名资料会保留。`
+    : nextLevel === 'super'
+      ? `提升后，“${username}”可以设置或撤销其他最高管理员权限。`
+      : `变更后，“${username}”将拥有现有管理后台权限，但不能操作最高管理员权限。`;
   return new Promise((resolve) => {
     const bannerClass = promoting ? 'warning-banner' : 'danger-banner';
     const buttonClass = promoting ? 'button-primary' : 'button-danger';
-    openModal(title, `<div class="${bannerClass} info-banner">${icon(promoting ? 'shield' : 'alert')}<div><strong>请确认权限变更</strong><br>${escapeHtml(message)}权限变更后，该账号需要重新登录。</div></div>`, `<button class="button button-secondary" type="button" data-action="confirm-cancel">取消</button><button class="button ${buttonClass}" type="button" data-action="confirm-ok">确认${promoting ? '添加' : '撤销'}</button>`, 'small');
+    openModal(title, `<div class="${bannerClass} info-banner">${icon(promoting ? 'shield' : 'alert')}<div><strong>请确认权限变更</strong><br>${escapeHtml(message)}权限变更后，该账号需要重新登录。</div></div>`, `<button class="button button-secondary" type="button" data-action="confirm-cancel">取消</button><button class="button ${buttonClass}" type="button" data-action="confirm-ok">确认变更</button>`, 'small');
     state.confirmResolver = resolve;
   });
 }
 
 async function changeUserRole(button) {
   const id = Number(button.dataset.id);
-  const role = button.dataset.role;
+  const adminLevel = button.dataset.adminLevel;
   const username = button.dataset.username || '该用户';
-  const confirmed = await confirmUserRoleChange(username, role);
+  const confirmed = await confirmUserRoleChange(username, adminLevel);
   if (!confirmed) return;
   button.disabled = true;
   try {
-    const result = await apiFetch(`/api/admin/users/${id}/role`, { method: 'POST', body: JSON.stringify({ role }) });
+    const result = await apiFetch(`/api/admin/users/${id}/role`, { method: 'POST', body: JSON.stringify({ admin_level: adminLevel }) });
     toast(result.message);
     await render();
   } catch (error) {

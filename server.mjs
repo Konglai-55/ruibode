@@ -443,6 +443,7 @@ class AppDatabase {
         password_hash TEXT NOT NULL,
         password_salt TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user','admin')),
+        admin_level TEXT NOT NULL DEFAULT 'none' CHECK(admin_level IN ('none','mid','super')),
         nickname TEXT DEFAULT '', contact_name TEXT DEFAULT '', phone TEXT DEFAULT '',
         id_number TEXT DEFAULT '', org_name TEXT DEFAULT '', org_address TEXT DEFAULT '',
         org_intro TEXT DEFAULT '', avatar_url TEXT DEFAULT '', created_at TEXT NOT NULL
@@ -600,6 +601,17 @@ class AppDatabase {
     `);
     const userColumns = this.db.prepare('PRAGMA table_info(users)').all().map((column) => column.name);
     if (!userColumns.includes('username')) this.db.exec("ALTER TABLE users ADD COLUMN username TEXT NOT NULL DEFAULT '' COLLATE NOCASE");
+    if (!userColumns.includes('admin_level')) {
+      this.db.exec("ALTER TABLE users ADD COLUMN admin_level TEXT NOT NULL DEFAULT 'none' CHECK(admin_level IN ('none','mid','super'))");
+      this.db.exec("UPDATE users SET admin_level='mid' WHERE role='admin'");
+      const firstAdmin = this.db.prepare("SELECT id FROM users WHERE role='admin' ORDER BY id LIMIT 1").get();
+      if (firstAdmin) this.db.prepare("UPDATE users SET admin_level='super' WHERE id=?").run(firstAdmin.id);
+    }
+    this.db.exec("UPDATE users SET admin_level='none' WHERE role='user'; UPDATE users SET admin_level='mid' WHERE role='admin' AND admin_level='none'");
+    if (!this.db.prepare("SELECT 1 FROM users WHERE role='admin' AND admin_level='super' LIMIT 1").get()) {
+      const firstAdmin = this.db.prepare("SELECT id FROM users WHERE role='admin' ORDER BY id LIMIT 1").get();
+      if (firstAdmin) this.db.prepare("UPDATE users SET admin_level='super' WHERE id=?").run(firstAdmin.id);
+    }
     const usersWithoutUsername = this.db.prepare("SELECT id,email FROM users WHERE TRIM(username)='' ORDER BY id").all();
     const usernameTaken = this.db.prepare('SELECT 1 FROM users WHERE username=? COLLATE NOCASE AND id<>?');
     const updateUsername = this.db.prepare('UPDATE users SET username=? WHERE id=?');
@@ -694,8 +706,8 @@ class AppDatabase {
       }
       for (const user of users) {
         const credential = await hashPassword(user.password);
-        this.db.prepare('INSERT INTO users(username,email,password_hash,password_salt,role,nickname,created_at) VALUES(?,?,?,?,?,?,?)')
-          .run(user.username, user.email, credential.hash, credential.salt, user.role, user.nickname, created);
+        this.db.prepare('INSERT INTO users(username,email,password_hash,password_salt,role,admin_level,nickname,created_at) VALUES(?,?,?,?,?,?,?,?)')
+          .run(user.username, user.email, credential.hash, credential.salt, user.role, user.role === 'admin' ? 'super' : 'none', user.nickname, created);
       }
     }
     if (!production && !this.db.prepare('SELECT 1 FROM events LIMIT 1').get()) {
@@ -779,7 +791,7 @@ function adminTeamDetails(db, teamId) {
 }
 
 function adminUserDetails(db, userId) {
-  const user = db.prepare(`SELECT id,username,nickname,email,phone,contact_name,id_number,org_name,org_address,org_intro,avatar_url,role,created_at
+  const user = db.prepare(`SELECT id,username,nickname,email,phone,contact_name,id_number,org_name,org_address,org_intro,avatar_url,role,admin_level,created_at
     FROM users WHERE id=?`).get(userId);
   if (!user) throw fail(404, '未找到该用户');
   user.coaches = db.prepare('SELECT * FROM coaches WHERE user_id=? ORDER BY created_at DESC,id DESC').all(userId);
@@ -1928,12 +1940,12 @@ async function api(req, res, url, appDb, uploadDir) {
       args.push(term, term, term, term, term, term, term);
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    const users = db.prepare(`SELECT u.id,u.username,u.nickname,u.email,u.phone,u.contact_name,u.org_name,u.role,u.created_at,
+    const users = db.prepare(`SELECT u.id,u.username,u.nickname,u.email,u.phone,u.contact_name,u.org_name,u.role,u.admin_level,u.created_at,
       (SELECT COUNT(*) FROM teams t WHERE t.user_id=u.id) AS team_count,
       (SELECT COUNT(*) FROM coaches c WHERE c.user_id=u.id) AS coach_count,
       (SELECT COUNT(*) FROM members m WHERE m.user_id=u.id) AS member_count,
       (SELECT COUNT(*) FROM registrations r WHERE r.user_id=u.id) AS registration_count
-      FROM users u ${where} ORDER BY u.created_at DESC,u.id DESC`).all(...args);
+      FROM users u ${where} ORDER BY CASE u.admin_level WHEN 'super' THEN 0 WHEN 'mid' THEN 1 ELSE 2 END,u.created_at DESC,u.id DESC`).all(...args);
     return json(res, 200, { users });
   }
   if ((params=matchRoute(path,'/api/admin/users/:id/role')) && method==='POST') {
@@ -1941,25 +1953,31 @@ async function api(req, res, url, appDb, uploadDir) {
     const id = Number(params.id);
     if (!Number.isInteger(id) || id <= 0) throw fail(422, '用户编号无效');
     const body = await bodyJson(req);
-    const nextRole = cleanText(body.role, 20);
-    if (!['user', 'admin'].includes(nextRole)) throw fail(422, '用户权限无效');
+    const nextLevel = cleanText(body.admin_level, 20) || (body.role === 'admin' ? 'mid' : body.role === 'user' ? 'none' : '');
+    if (!['none', 'mid', 'super'].includes(nextLevel)) throw fail(422, '用户权限无效');
     const result = withTransaction(db, () => {
-      const target = db.prepare('SELECT id,username,email,role FROM users WHERE id=?').get(id);
+      const target = db.prepare('SELECT id,username,email,role,admin_level FROM users WHERE id=?').get(id);
       if (!target) throw fail(404, '未找到该用户');
-      if (target.role === nextRole) return { target, changed: false };
-      if (nextRole === 'user') {
-        if (actor.id === id) throw fail(409, '不能降低当前登录管理员自己的权限');
-        const adminCount = db.prepare("SELECT COUNT(*) AS count FROM users WHERE role='admin'").get().count;
-        if (adminCount <= 1) throw fail(409, '系统至少需要保留一名管理员');
+      const targetLevel = target.role === 'admin' ? (target.admin_level === 'super' ? 'super' : 'mid') : 'none';
+      const actorLevel = actor.admin_level === 'super' ? 'super' : 'mid';
+      if (targetLevel === nextLevel) return { target: { ...target, admin_level: targetLevel }, changed: false };
+      if (actor.id === id) throw fail(409, '不能修改当前登录管理员自己的权限');
+      if (actorLevel !== 'super' && (targetLevel === 'super' || nextLevel === 'super')) {
+        throw fail(403, '只有最高管理员可以设置或撤销最高管理员权限');
       }
-      db.prepare('UPDATE users SET role=? WHERE id=?').run(nextRole, id);
+      if (targetLevel === 'super' && nextLevel !== 'super') {
+        const superCount = db.prepare("SELECT COUNT(*) AS count FROM users WHERE role='admin' AND admin_level='super'").get().count;
+        if (superCount <= 1) throw fail(409, '系统至少需要保留一名最高管理员');
+      }
+      const nextRole = nextLevel === 'none' ? 'user' : 'admin';
+      db.prepare('UPDATE users SET role=?,admin_level=? WHERE id=?').run(nextRole, nextLevel, id);
       db.prepare('DELETE FROM sessions WHERE user_id=?').run(id);
-      return { target: { ...target, role: nextRole }, changed: true };
+      return { target: { ...target, role: nextRole, admin_level: nextLevel }, changed: true };
     });
-    const roleLabel = nextRole === 'admin' ? '管理员' : '普通用户';
+    const roleLabel = nextLevel === 'super' ? '最高管理员' : nextLevel === 'mid' ? '中级管理员' : '普通用户';
     return json(res, 200, {
       message: result.changed ? `已将“${result.target.username}”设为${roleLabel}，该账号需重新登录` : `该账号已经是${roleLabel}`,
-      user: { id: result.target.id, role: result.target.role },
+      user: { id: result.target.id, role: result.target.role, admin_level: result.target.admin_level },
     });
   }
   if ((params=matchRoute(path,'/api/admin/users/:id')) && method==='GET') {
