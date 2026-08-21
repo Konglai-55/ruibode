@@ -1176,7 +1176,7 @@ function portalShell(title, description, content, action = '') {
 
 function adminShell(title, description, content, action = '') {
   const current = routeInfo().path;
-  return `<section class="portal"><div class="container portal-layout"><aside class="sidebar"><div class="sidebar-head"><strong>赛事管理后台</strong><small>${escapeHtml(state.user.email)}</small></div><nav class="sidebar-nav" aria-label="管理后台导航">${sidebarLink('/admin','dashboard','管理概览',current)}${sidebarLink('/admin/events','calendar','赛事管理',current)}${sidebarLink('/admin/users','user','管理用户',current)}${sidebarLink('/admin/teams','flag','已有战队管理',current)}${sidebarLink('/admin/reviews','shield','赛事报名审核',current)}${sidebarLink('/admin/activity-applications','users','活动报名审核',current)}</nav></aside><div class="portal-main"><div class="portal-head"><div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(description)}</p></div>${action}</div>${content}</div></div></section>`;
+  return `<section class="portal admin-portal"><div class="container portal-layout"><aside class="sidebar"><div class="sidebar-head"><strong>赛事管理后台</strong><small>${escapeHtml(state.user.email)}</small></div><nav class="sidebar-nav" aria-label="管理后台导航">${sidebarLink('/admin','dashboard','管理概览',current)}${sidebarLink('/admin/events','calendar','赛事管理',current)}${sidebarLink('/admin/users','user','管理用户',current)}${sidebarLink('/admin/teams','flag','已有战队管理',current)}${sidebarLink('/admin/reviews','shield','赛事报名审核',current)}${sidebarLink('/admin/activity-applications','users','活动报名审核',current)}</nav></aside><div class="portal-main"><div class="portal-head"><div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(description)}</p></div>${action}</div>${content}</div></div></section>`;
 }
 
 function adminSearchForm(value, placeholder) {
