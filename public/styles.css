@@ -91,6 +91,22 @@ svg { flex: 0 0 auto; }
 .mobile-nav-title { display: block; padding: 8px 12px 4px; color: var(--muted-text); font-size: 13px; letter-spacing: .08em; }
 .mobile-nav-group a { padding-left: 22px; }
 .mobile-bottom-nav { display: none; }
+.mobile-account-page { min-height: calc(100dvh - var(--header-height)); padding: 34px 0 70px; background: var(--surface-soft); }
+.mobile-account-heading h1 { margin: 0; font-size: 30px; line-height: 1.2; }
+.mobile-account-heading p { margin: 6px 0 22px; color: var(--muted-text); }
+.mobile-account-profile { display: flex; align-items: center; gap: 13px; margin-bottom: 14px; padding: 16px; border: 1px solid var(--border-light); border-radius: 10px; background: #fff; }
+.mobile-account-profile img, .mobile-account-avatar { width: 52px; height: 52px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; color: #fff; background: #34383e; object-fit: cover; font-size: 20px; font-weight: 700; }
+.mobile-account-profile strong, .mobile-account-profile small { display: block; overflow-wrap: anywhere; }
+.mobile-account-profile small { color: var(--muted-text); font-size: 13px; }
+.mobile-account-links { display: grid; gap: 10px; }
+.mobile-account-link { min-height: 72px; display: flex; align-items: center; gap: 13px; width: 100%; padding: 13px 15px; border: 1px solid var(--border-light); border-radius: 10px; background: #fff; color: var(--foreground); text-decoration: none; text-align: left; }
+.mobile-account-link > svg:first-child { width: 23px; height: 23px; flex: 0 0 auto; color: var(--primary); }
+.mobile-account-link > svg:last-child { margin-left: auto; color: var(--muted-text); }
+.mobile-account-link strong, .mobile-account-link small { display: block; }
+.mobile-account-link small { margin-top: 2px; color: var(--muted-text); font-size: 12px; }
+.mobile-account-link:hover { border-color: var(--primary); background: #fffafb; }
+.mobile-account-logout { color: var(--danger); cursor: pointer; font: inherit; }
+.mobile-account-logout > svg:first-child { color: var(--danger); }
 
 #app { flex: 1 0 auto; }
 .page-section { padding: 42px 0 64px; }
@@ -668,6 +684,8 @@ textarea.form-control { min-height: 120px; resize: vertical; }
   .mobile-bottom-nav a, .mobile-bottom-nav button { min-height: 54px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 0; border-radius: 8px; background: transparent; color: var(--muted-text); text-decoration: none; font-size: 12px; font-weight: 650; }
   .mobile-bottom-nav a.active, .mobile-bottom-nav button.active { color: var(--primary); background: #fff2f4; }
   .mobile-bottom-nav svg { width: 21px; height: 21px; }
+  .mobile-account-page { padding-top: 24px; }
+  .mobile-account-heading h1 { font-size: 27px; }
   .header-inner { min-height: var(--header-height); gap: 10px; }
   .header-actions > a { display: none; }
   .event-grid { grid-template-columns: 1fr; }
