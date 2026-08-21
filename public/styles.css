@@ -487,6 +487,18 @@ textarea.form-control { min-height: 120px; resize: vertical; }
 .tab-bar .active { color: #fff; background: var(--primary); font-weight: 700; }
 
 .data-table-wrap { overflow-x: auto; border: 1px solid var(--border-light); border-radius: 4px; }
+.admin-user-table { width: 100%; table-layout: fixed; }
+.admin-user-table th, .admin-user-table td { overflow-wrap: anywhere; }
+.admin-user-table th:nth-child(1) { width: 14%; }
+.admin-user-table th:nth-child(2) { width: 12%; }
+.admin-user-table th:nth-child(3) { width: 17%; }
+.admin-user-table th:nth-child(4) { width: 12%; }
+.admin-user-table th:nth-child(5) { width: 17%; }
+.admin-user-table th:nth-child(6) { width: 13%; }
+.admin-user-table th:nth-child(7) { width: 15%; }
+.admin-user-table td:last-child { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.admin-user-mobile-list .entity-card { overflow: hidden; }
+.admin-user-mobile-list .entity-card .button { max-width: 100%; }
 .data-table { width: 100%; border-collapse: collapse; background: #fff; }
 .data-table th, .data-table td { padding: 13px 14px; border-bottom: 1px solid var(--border-light); text-align: left; vertical-align: middle; }
 .data-table th { color: #34383e; background: #f1f1ef; font-size: 13px; white-space: nowrap; }
@@ -689,6 +701,8 @@ textarea.form-control { min-height: 120px; resize: vertical; }
   .footer-bottom { grid-template-columns: 1fr auto; }
   .footer-note { grid-column: 1; grid-row: 2; }
   .footer-back-to-top { grid-column: 2; grid-row: 1 / span 2; }
+  .desktop-table:has(.admin-user-table) { display: none; }
+  .desktop-table:has(.admin-user-table) + .mobile-list { display: block; }
 }
 
 @media (max-width: 620px) {
