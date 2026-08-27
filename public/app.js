@@ -50,7 +50,7 @@ const RULE_PROGRAMS = Object.freeze([
     game: '飞跃巅峰 · Tier Takeover',
     version: '中文赛事手册 1.1',
     cover: '/assets/rules/recf-engage-cover.png',
-    pdf: '/assets/rules/recf-engage-tier-takeover-v1.1-cn.pdf',
+    pdf: '/assets/rules/RECF·飞跃巅峰·小初塑料·1.1.pdf',
     description: '面向小学及初中阶段的实践型机器人竞赛，通过设计、搭建、编程和团队协作，引导学生在真实任务中培养工程思维与解决问题的能力。',
     highlights: ['小学组（U12）或初中组（U15），每队 2 名及以上学生', '可使用指定的 VEX IQ、Hexbug、LEGO 电子元件与结构件', '允许符合规则的切割件及 3D 打印自制零件'],
   },
@@ -61,7 +61,7 @@ const RULE_PROGRAMS = Object.freeze([
     game: '高瞻远瞩 · Pinnacle',
     version: '中文规则 1.2',
     cover: '/assets/rules/recf-achieve-cover.png',
-    pdf: '/assets/rules/recf-achieve-pinnacle-v1.2-cn.pdf',
+    pdf: '/assets/rules/RECF·高瞻远瞩·初高金属·1.2.pdf',
     description: '面向初中及高中阶段的综合机器人竞赛，鼓励学生灵活运用多种机械系统、气动元件与自制零件，完成驾驶、自动程序和联队任务。',
     highlights: ['初中组（U15）或高中组（U19），每队 1 名及以上学生', '可使用 VEX V5、Robits、TETRIX MAX 等结构系统，电子系统统一使用 VEX V5', '允许符合规则的气动、切割塑料件及 3D 打印零件'],
   },
@@ -72,7 +72,7 @@ const RULE_PROGRAMS = Object.freeze([
     game: '高瞻远瞩 · Pinnacle',
     version: '中文规则 1.2',
     cover: '/assets/rules/recf-inspire-cover.png',
-    pdf: '/assets/rules/recf-inspire-pinnacle-v1.2-cn.pdf',
+    pdf: '/assets/rules/RECF·高瞻远瞩·大学金属·1.2.pdf',
     description: '面向高等教育阶段学生的开放式机器人竞赛，强调自主工程设计、跨系统整合以及同一战队两台机器人的协同策略。',
     highlights: ['适用于正在接受高等教育的在籍大学学生', '结构系统开放，可按规则使用多种机器人平台与常规消费级零部件', '允许大量自制塑料、3D 打印及定制设计零件', '一个RECF Inspire联盟由来自同一支已注册赛队的两台机器人和两个操作手团队组成'],
   },
@@ -688,6 +688,25 @@ function confirmAction(title, message, confirmLabel = '确认删除') {
   return new Promise((resolve) => {
     openModal(title, `<p>${escapeHtml(message)}</p><div class="danger-banner info-banner">${icon('alert')}<div>此操作可能无法撤销，请确认目标无误。</div></div>`, `<button class="button button-secondary" type="button" data-action="confirm-cancel">取消</button><button class="button button-danger" type="button" data-action="confirm-ok">${escapeHtml(confirmLabel)}</button>`, 'small');
     state.confirmResolver = resolve;
+  });
+}
+
+function teamDeletionStatusMeta(registration) {
+  const original = reviewStatusMeta(registration.status);
+  if (registration.cancelled_at) return { label: `已取消（原${original.label}）`, className: 'badge-ended' };
+  if (registration.status === 'pending') return original;
+  return { ...original, label: `审核${original.label}` };
+}
+
+function confirmTeamCascadeDelete(registrations = []) {
+  return new Promise((resolve) => {
+    const rows = registrations.map((registration) => `<li><strong>${escapeHtml(registration.event_title || '未命名赛事')}</strong>${badge(teamDeletionStatusMeta(registration))}</li>`).join('');
+    const content = `<div class="danger-banner info-banner">${icon('alert')}<div><strong>检测到该战队正在参与下列赛项：</strong></div></div><ul class="team-delete-impact-list">${rows}</ul><p class="team-delete-final-warning">删除战队将导致该战队信息全部丢失，同时自动取消并删除上述所有赛事报名。确认删除战队吗？</p>`;
+    const footer = `<button class="button button-danger" type="button" data-action="confirm-ok" data-delayed-confirm disabled>确认删除战队</button><button class="button button-secondary" type="button" data-action="confirm-cancel" autofocus>取消</button>`;
+    openModal('战队仍有关联赛事报名', content, footer, 'small');
+    state.confirmResolver = resolve;
+    const confirmButton = $('[data-delayed-confirm]', modalRoot);
+    window.setTimeout(() => { if (confirmButton?.isConnected) confirmButton.disabled = false; }, 1200);
   });
 }
 
@@ -1812,7 +1831,14 @@ function clearUpload(button) {
 
 async function deleteEntity(type,id) {
   const labels={members:'队员',coaches:'教练',teams:'战队'};const ok=await confirmAction(`删除${labels[type]}`,`确定要删除这条${labels[type]}信息吗？`);if(!ok)return;
-  try{const result=await apiFetch(`/api/${type}/${id}`,{method:'DELETE'});toast(result.message);await render();}catch(error){toast(error.message,'error');}
+  try{const result=await apiFetch(`/api/${type}/${id}`,{method:'DELETE'});toast(result.message);await render();}catch(error){
+    if(type==='teams'&&error.status===409&&error.fields?.requires_force){
+      const confirmed=await confirmTeamCascadeDelete(error.fields.registrations||[]);if(!confirmed)return;
+      try{const result=await apiFetch(`/api/teams/${id}?force=1`,{method:'DELETE'});toast(result.message);await render();}catch(forceError){toast(forceError.message,'error');}
+      return;
+    }
+    toast(error.message,'error');
+  }
 }
 
 async function deleteRegistration(id) { const ok=await confirmAction('删除报名记录','确定删除这条未通过的报名记录吗？');if(!ok)return;try{const result=await apiFetch(`/api/registrations/${id}`,{method:'DELETE'});toast(result.message);await render();}catch(error){toast(error.message,'error');} }

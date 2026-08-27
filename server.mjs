@@ -1746,7 +1746,23 @@ async function api(req, res, url, appDb, uploadDir) {
     } catch(error){ if(String(error).includes('UNIQUE')) throw fail(409,DUPLICATE_TEAM_NUMBER_MESSAGE,{number:DUPLICATE_TEAM_NUMBER_MESSAGE}); throw error; }
     return json(res,200,{message:'战队信息已更新；已审核报名将重新进入审核'});
   }
-  if ((params=matchRoute(path,'/api/teams/:id')) && method==='DELETE') { const user=auth(req,appDb); const id=Number(params.id); if(!userOwns(db,'teams',id,user.id)) throw fail(404,'未找到该战队'); if(db.prepare('SELECT 1 FROM registrations WHERE team_id=?').get(id)) throw fail(409,'该战队已有参赛记录，无法删除'); db.prepare('DELETE FROM teams WHERE id=?').run(id); return json(res,200,{message:'战队已删除'}); }
+  if ((params=matchRoute(path,'/api/teams/:id')) && method==='DELETE') {
+    const user=auth(req,appDb); const id=Number(params.id);
+    if(!userOwns(db,'teams',id,user.id)) throw fail(404,'未找到该战队');
+    const registrations=db.prepare(`SELECT r.id,r.status,r.cancelled_at,e.id AS event_id,e.title AS event_title,e.starts_at
+      FROM registrations r JOIN events e ON e.id=r.event_id WHERE r.team_id=?
+      ORDER BY e.starts_at ASC,e.id ASC,r.id ASC`).all(id);
+    const force=url.searchParams.get('force')==='1';
+    if(registrations.length&&!force) {
+      throw fail(409,'该战队仍有关联赛事报名',{requires_force:true,registrations});
+    }
+    const deletedRegistrations=withTransaction(db,()=>{
+      const count=Number(db.prepare('DELETE FROM registrations WHERE team_id=?').run(id).changes);
+      db.prepare('DELETE FROM teams WHERE id=?').run(id);
+      return count;
+    });
+    return json(res,200,{message:deletedRegistrations?`战队及其 ${deletedRegistrations} 条赛事报名已删除`:'战队已删除',deletedRegistrations});
+  }
 
   if (method === 'GET' && path === '/api/registrations') {
     const user=auth(req,appDb); const registrations=db.prepare(`SELECT r.*,e.title AS event_title,e.status AS event_status,e.starts_at,e.ends_at,e.registration_start,e.registration_end,e.refund_deadline_days,t.name AS team_name,t.number AS team_number

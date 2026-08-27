@@ -63,6 +63,7 @@ browser = await chromium.launch({ headless: true, executablePath: process.env.BR
 for (const profile of [
   { name: 'desktop-home', viewport: { width: 1440, height: 1000 } },
   { name: 'mobile-home', viewport: { width: 375, height: 812 } },
+  { name: 'narrow-mobile-home', viewport: { width: 280, height: 700 } },
 ]) {
   const context = await browser.newContext({ viewport: profile.viewport, deviceScaleFactor: 1 });
   const page = await context.newPage();
@@ -266,6 +267,16 @@ const sessionAfterLogin = await authContext.request.get(`${base}/api/auth/me`).t
 const authOverflow = await authPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
 const leakedCredentials = (await authPage.locator('body').textContent()).includes('Admin123!');
 checks.push({ profile: 'mobile-login', title: loginTitle, logoLoaded: authLogoLoaded, accountFieldVisible, captchaRemoved: loginCaptchaCount === 0, emailCodeRemoved: loginEmailCodeCount === 0, directSessionCreated: Boolean(sessionAfterLogin.user), leakedCredentials, overflow: authOverflow, valid: authLogoLoaded && accountFieldVisible && loginCaptchaCount === 0 && loginEmailCodeCount === 0 && Boolean(sessionAfterLogin.user) && !leakedCredentials && !authOverflow });
+await authPage.setViewportSize({ width: 280, height: 700 });
+await authPage.goto(`${base}/#/home`, { waitUntil: 'networkidle' });
+await authPage.screenshot({ path: `${output}/narrow-mobile-authenticated-home.png`, fullPage: true });
+const narrowAuthenticatedHome = await authPage.evaluate(() => ({
+  scrollWidth: document.documentElement.scrollWidth,
+  clientWidth: document.documentElement.clientWidth,
+  menuVisible: Boolean(document.querySelector('.mobile-toggle')),
+}));
+checks.push({ profile: 'narrow-mobile-authenticated-home', ...narrowAuthenticatedHome, overflow: narrowAuthenticatedHome.scrollWidth > narrowAuthenticatedHome.clientWidth + 1, valid: narrowAuthenticatedHome.menuVisible && narrowAuthenticatedHome.scrollWidth <= narrowAuthenticatedHome.clientWidth + 1 });
+await authPage.setViewportSize({ width: 375, height: 812 });
 await authContext.clearCookies();
 await authPage.reload({ waitUntil: 'networkidle' });
 await authPage.goto(`${base}/#/forgot-password`, { waitUntil: 'networkidle' });

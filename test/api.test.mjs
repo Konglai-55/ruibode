@@ -410,6 +410,19 @@ test('邮箱验证注册、登录、资料建档、组队和报名流程可贯�
     assert.equal(registration.response.status, 201);
     const mine = await user.request('/api/registrations');
     assert.equal(mine.payload.registrations[0].status, 'pending');
+
+    const blockedTeamDelete = await user.request(`/api/teams/${team.payload.id}`, { method: 'DELETE' });
+    assert.equal(blockedTeamDelete.response.status, 409, '有关联报名时应要求用户再次确认');
+    assert.equal(blockedTeamDelete.payload.fields.requires_force, true);
+    assert.deepEqual(blockedTeamDelete.payload.fields.registrations.map((item) => ({ event_title: item.event_title, status: item.status })), [{ event_title: event.title, status: 'pending' }]);
+    assert.ok(app.db.prepare('SELECT 1 FROM teams WHERE id=?').get(team.payload.id), '第一次确认不得删除战队');
+    assert.ok(app.db.prepare('SELECT 1 FROM registrations WHERE id=?').get(registration.payload.id), '第一次确认不得删除报名');
+
+    const forcedTeamDelete = await user.request(`/api/teams/${team.payload.id}?force=1`, { method: 'DELETE' });
+    assert.equal(forcedTeamDelete.response.status, 200);
+    assert.equal(forcedTeamDelete.payload.deletedRegistrations, 1);
+    assert.equal(app.db.prepare('SELECT 1 FROM registrations WHERE id=?').get(registration.payload.id), undefined, '二次确认后应清理关联报名');
+    assert.equal(app.db.prepare('SELECT 1 FROM teams WHERE id=?').get(team.payload.id), undefined, '关联报名清理后应删除战队');
   } finally { await app.close(); }
 });
 
