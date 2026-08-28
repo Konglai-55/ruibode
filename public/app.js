@@ -791,6 +791,7 @@ function setHomeSlide(index) {
     dot.classList.toggle('active', selected);
     dot.setAttribute('aria-current', selected ? 'true' : 'false');
   });
+  root.classList.toggle('is-logo-slide-active', slides[active].classList.contains('is-logo-only'));
 }
 
 function startHomeCarousel() {
@@ -816,9 +817,9 @@ function homePage() {
     ? `href="#${escapeHtml(slide.scrollTarget)}" data-action="scroll-home-programs" data-target="${escapeHtml(slide.scrollTarget)}"`
     : externalLinkAttrs(slide.href);
   const heroSlides = [
-    { src: '/assets/ruibude-logo.jpg', alt: '上海瑞卜德教育商标', href: recfPartnerUrl, logoOnly: true },
+    { file: 'hero-recf.png', alt: 'RECF 赛事品牌展示', href: recfPartnerUrl },
     { file: 'hero-vex.jpg', alt: '机器人竞赛现场展示', scrollTarget: 'home-programs' },
-    { file: 'hero-robotvex.png', alt: 'Robot VEX 项目展示', href: robotVexBannerUrl },
+    { src: '/assets/ruibude-logo.jpg', alt: '上海瑞卜德教育商标', href: robotVexBannerUrl, logoOnly: true },
     { file: 'hero-robots-1.jpg', alt: '无人机竞赛视频展示', href: droneVideoUrl },
     { file: 'hero-robots-2.jpg', alt: '无人机竞赛视频展示', href: droneVideoUrl },
   ];
