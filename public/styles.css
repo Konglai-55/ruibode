@@ -128,6 +128,9 @@ svg { flex: 0 0 auto; }
 .home-hero-link { display: block; width: 100%; height: 100%; }
 .home-hero-link:focus-visible { outline: 3px solid #fff; outline-offset: -6px; }
 .home-hero-slide img { width: 100%; height: 100%; object-fit: cover; object-position: center; }
+.home-hero-slide.is-logo-only { background: #fff; }
+.home-hero-slide.is-logo-only .home-hero-link { display: grid; place-items: center; }
+.home-hero-slide.is-logo-only img { width: 22%; max-width: none; height: auto; max-height: 64%; object-fit: contain; }
 .home-hero-dots { position: absolute; left: 50%; bottom: 18px; z-index: 3; display: flex; gap: 10px; transform: translateX(-50%); }
 .home-hero-dots button { width: 13px; height: 13px; padding: 0; border: 1px solid rgba(255,255,255,.9); border-radius: 50%; background: rgba(255,255,255,.52); box-shadow: 0 1px 3px rgba(0,0,0,.28); cursor: pointer; transition: background .18s ease, transform .18s ease; }
 .home-hero-dots button:hover, .home-hero-dots button:focus-visible { transform: scale(1.12); background: rgba(255,255,255,.8); }

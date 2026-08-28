@@ -16,25 +16,25 @@
 
 ## 创建账号
 
-1. **步骤 1：** 访问 [www.recfevents.org](https://www.recfevents.org)，点击 **“Register Now（立即注册）”** 按钮。
+**步骤 1：** 访问 [www.recfevents.org](https://www.recfevents.org)，点击 **“Register Now（立即注册）”** 按钮。
 ![RECFERN](/assets/guides/recf-team-registration/RECFeventsregisternow.png)
-2. **步骤 2：** 使用您希望使用的电子邮箱创建账号。 
+**步骤 2：** 使用您希望使用的电子邮箱创建账号。
    * *注意：* 如果您希望认领您的机构上赛季使用的机构基准编号，您必须使用与该机构基准编号绑定的相同邮箱。系统还会要求您提供电话号码和密码。
   ![RECFRN](/assets/guides/recf-team-registration/RegisterNew.png)
-3. **步骤 3：** 您的注册邮箱将收到一封验证邮件。点击邮件中的链接以验证邮箱地址。如果您没有收到验证邮件，请检查垃圾邮件箱。
+**步骤 3：** 您的注册邮箱将收到一封验证邮件。点击邮件中的链接以验证邮箱地址。如果您没有收到验证邮件，请检查垃圾邮件箱。
   ![CYE](/assets/guides/recf-team-registration/confirm_your_email.png)
 
 ---
 
 ## 注册新机构
 
-1. **步骤 1：** 登录系统，点击页面左上角的 **“Dashboard（控制面板）”**，然后点击 **“Register/Manage Organization and Teams（注册/管理机构与团队）”** 按钮。
+**步骤 1：** 登录系统，点击页面左上角的 **“Dashboard（控制面板）”**，然后点击 **“Register/Manage Organization and Teams（注册/管理机构与团队）”** 按钮。
 
   ![DB](/assets/guides/recf-team-registration/dashboard.png)
     ![RMOAT](/assets/guides/recf-team-registration/register_manage_organization_and_team.png)
-2. **步骤 2：** 点击 **“+Add New BASE Number（+添加新基准编号）”** 按钮。根据您所参加的项目，系统将为您分配一组随机数字或字母组合。
+**步骤 2：** 点击 **“+Add New BASE Number（+添加新基准编号）”** 按钮。根据您所参加的项目，系统将为您分配一组随机数字或字母组合。
   ![RENBN](/assets/guides/recf-team-registration/RECFEventsNewBaseNumber.png)
-3. **步骤 3：** 点击 **“Programs（项目）”** 按钮开始创建机构。
+**步骤 3：** 点击 **“Programs（项目）”** 按钮开始创建机构。
   ![RECFAP](/assets/guides/recf-team-registration/RECFevents_add_programs.png)
 系统将要求您填写具体的机构信息，填写完成后点击 **“Save（保存）”**。
 ![RECFEOD](/assets/guides/recf-team-registration/RECFevents_organization_details.png)
@@ -42,7 +42,7 @@
 
 ## 认领往届/已有机构
 
-1. **步骤 1：** 登录系统，点击页面左上角的 **“Dashboard（控制面板）”**，然后点击 **“Register/Manage Organization and Teams（注册/管理机构与团队）”** 按钮。
+**步骤 1：** 登录系统，点击页面左上角的 **“Dashboard（控制面板）”**，然后点击 **“Register/Manage Organization and Teams（注册/管理机构与团队）”** 按钮。
   ![DB](/assets/guides/recf-team-registration/dashboard.png)
     ![RMOAT](/assets/guides/recf-team-registration/register_manage_organization_and_team.png)
 

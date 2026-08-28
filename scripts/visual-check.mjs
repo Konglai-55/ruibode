@@ -91,6 +91,9 @@ for (const profile of [
       introWidth: Math.round(introRect.width),
       heroAligned: Math.abs(heroRect.left - introRect.left) <= 1 && Math.abs(heroRect.width - introRect.width) <= 1,
       firstHeroLoaded: document.querySelector('.home-hero-slide:first-child img')?.naturalWidth > 0,
+      firstHeroSrc: document.querySelector('.home-hero-slide:first-child img')?.getAttribute('src'),
+      firstHeroLogoOnly: document.querySelector('.home-hero-slide:first-child')?.classList.contains('is-logo-only'),
+      firstHeroObjectFit: getComputedStyle(document.querySelector('.home-hero-slide:first-child img')).objectFit,
       programImagesLoaded: [...document.querySelectorAll('.home-program-logos img')].every((image) => image.naturalWidth > 0),
       heroHrefs: [...document.querySelectorAll('.home-hero-link')].map((link) => link.getAttribute('href')),
       heroActions: [...document.querySelectorAll('.home-hero-link')].map((link) => link.dataset.action || ''),
@@ -131,7 +134,10 @@ for (const profile of [
     return { ready: video.dataset.blobReady === 'true', src: video.currentSrc || video.src };
   });
   const featuredVideoValid = homeInfo.featuredVideoTitle === '美国RECF国际副总裁Tarek Shraibati致贺词：正式确认上海瑞卜德教育科技有限公司为中国官方国际代表' && !homeInfo.featuredVideoSrc && homeInfo.featuredVideoDataSrc === '/assets/home/recf-tarek-shraibati-congratulations.mp4' && homeInfo.featuredVideoPoster === '/assets/home/recf-tarek-shraibati-congratulations-poster.jpg' && homeInfo.featuredVideoControls && homeInfo.featuredVideoControlsList === 'nodownload' && homeInfo.featuredVideoPictureInPictureDisabled && homeInfo.featuredVideoFallbackLinks === 0 && Math.abs(homeInfo.featuredVideoWidth - homeInfo.introWidth) <= 1 && !homeInfo.featuredVideoAutoplay && homeInfo.featuredVideoPreload === 'none' && blobVideoState.ready && blobVideoState.src.startsWith('blob:');
-  checks.push({ profile: profile.name, ...homeInfo, blobVideoState, overflow: homeInfo.scrollWidth > homeInfo.clientWidth + 1, valid: homeInfo.title === '准备好开启你的机器人竞技之旅了吗？' && homeInfo.programCount === 3 && homeInfo.dotCount === 5 && homeInfo.activeDot === '2' && homeInfo.activeHero === '/assets/home/hero-robotvex.png' && ratioValid && homeInfo.heroAligned && homeInfo.firstHeroLoaded && homeInfo.programImagesLoaded && homeInfo.homeHref === '#/home' && featuredVideoValid && homeInfo.heroHrefs.join('|') === expectedHeroHrefs.join('|') && homeInfo.heroActions.join('|') === expectedHeroActions.join('|') && homeInfo.partnerHrefs.join('|') === expectedPartnerHrefs.join('|') && homeInfo.partnerImageSrcs.join('|') === expectedPartnerImageSrcs.join('|') && homeInfo.platformHrefs.join('|') === expectedPlatformHrefs.join('|') && homeInfo.logoHrefs.join('|') === expectedLogoHrefs.join('|') && homeInfo.scrollWidth <= homeInfo.clientWidth + 1 });
+  checks.push({ profile: profile.name, ...homeInfo, blobVideoState, overflow: homeInfo.scrollWidth > homeInfo.clientWidth + 1, valid: homeInfo.title === '准备好开启你的机器人竞技之旅了吗？' && homeInfo.programCount === 3 && homeInfo.dotCount === 5 && homeInfo.activeDot === '2' && homeInfo.activeHero === '/assets/home/hero-robotvex.png' && ratioValid && homeInfo.heroAligned && homeInfo.firstHeroLoaded && homeInfo.firstHeroSrc === '/assets/ruibude-logo.jpg' && homeInfo.firstHeroLogoOnly && homeInfo.firstHeroObjectFit === 'contain' && homeInfo.programImagesLoaded && homeInfo.homeHref === '#/home' && featuredVideoValid && homeInfo.heroHrefs.join('|') === expectedHeroHrefs.join('|') && homeInfo.heroActions.join('|') === expectedHeroActions.join('|') && homeInfo.partnerHrefs.join('|') === expectedPartnerHrefs.join('|') && homeInfo.partnerImageSrcs.join('|') === expectedPartnerImageSrcs.join('|') && homeInfo.platformHrefs.join('|') === expectedPlatformHrefs.join('|') && homeInfo.logoHrefs.join('|') === expectedLogoHrefs.join('|') && homeInfo.scrollWidth <= homeInfo.clientWidth + 1 });
+  await page.locator('.home-hero-dots button').first().click();
+  await page.waitForTimeout(700);
+  await page.screenshot({ path: `${output}/${profile.name}-logo-banner.png`, fullPage: true });
   await context.close();
 }
 
@@ -181,6 +187,7 @@ for (const profile of [
     const partnerBrandLoaded = await page.locator('.site-brand-partner-logo').evaluate((image) => image.naturalWidth > 0);
     const brandHref = await page.locator('.site-brand').getAttribute('href');
     const homeHref = await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '首页', exact: true }).getAttribute('href');
+    const teamNumberHref = await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '如何注册队号', exact: true }).getAttribute('href');
     const aboutHref = await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '关于我们', exact: true }).getAttribute('href');
     const footerPrimaryLogoLoaded = await page.locator('.footer-primary-logo').evaluate((image) => image.naturalWidth > 0);
     const footerPartnerLogoLoaded = await page.locator('.footer-partner-logo').evaluate((image) => image.naturalWidth > 0);
@@ -197,7 +204,7 @@ for (const profile of [
     await dropdown.waitFor({ state: 'hidden' });
     const collapsedByEscape = await activityButton.getAttribute('aria-expanded') === 'false' && !(await dropdown.isVisible());
     const expectedItems = ['赛事报名'];
-    checks.push({ profile: 'desktop-header', brandVisible, primaryBrandLoaded, partnerBrandLoaded, footerPrimaryLogoLoaded, footerPartnerLogoLoaded, brandHref, homeHref, aboutHref, activityItems, activityHrefs, placeholderActions, expanded, collapsedByEscape, valid: brandVisible && primaryBrandLoaded && partnerBrandLoaded && footerPrimaryLogoLoaded && footerPartnerLogoLoaded && brandHref === '#/home' && homeHref === '#/home' && aboutHref === '#/about' && expanded && collapsedByEscape && placeholderActions === 0 && activityItems.join('|') === expectedItems.join('|') && activityHrefs.join('|') === '#/events' });
+    checks.push({ profile: 'desktop-header', brandVisible, primaryBrandLoaded, partnerBrandLoaded, footerPrimaryLogoLoaded, footerPartnerLogoLoaded, brandHref, homeHref, teamNumberHref, aboutHref, activityItems, activityHrefs, placeholderActions, expanded, collapsedByEscape, valid: brandVisible && primaryBrandLoaded && partnerBrandLoaded && footerPrimaryLogoLoaded && footerPartnerLogoLoaded && brandHref === '#/home' && homeHref === '#/home' && teamNumberHref === '#/team-number' && aboutHref === '#/about' && expanded && collapsedByEscape && placeholderActions === 0 && activityItems.join('|') === expectedItems.join('|') && activityHrefs.join('|') === '#/events' });
   }
   if (profile.name === 'mobile') {
     const mobileToggle = page.locator('.mobile-toggle');
@@ -206,6 +213,7 @@ for (const profile of [
     const mobileMenuVisible = await mobileDrawer.isVisible();
     const activityItems = (await page.locator('.mobile-nav-group a').allTextContents()).map((text) => text.trim());
     const mobileHomeHref = await mobileDrawer.locator('a', { hasText: '首页' }).getAttribute('href');
+    const mobileTeamNumberHref = await mobileDrawer.locator('a', { hasText: '如何注册队号' }).getAttribute('href');
     const mobileAboutHref = await mobileDrawer.locator('a', { hasText: '关于我们' }).getAttribute('href');
     await page.screenshot({ path: `${output}/mobile-events-menu-open.png`, fullPage: true });
     await mobileToggle.click();
@@ -215,7 +223,7 @@ for (const profile of [
     const partnerBrandVisible = await page.locator('.site-brand-partner-logo').isVisible();
     const primaryBrandLoaded = await page.locator('.site-brand-primary-logo').evaluate((image) => image.naturalWidth > 0);
     const partnerBrandLoaded = await page.locator('.site-brand-partner-logo').evaluate((image) => image.naturalWidth > 0);
-    checks.push({ profile: 'mobile-header', primaryBrandVisible, partnerBrandVisible, primaryBrandLoaded, partnerBrandLoaded, activityItems, mobileHomeHref, mobileAboutHref, mobileMenuVisible, mobileMenuClosed, valid: primaryBrandVisible && partnerBrandVisible && primaryBrandLoaded && partnerBrandLoaded && mobileHomeHref === '#/home' && mobileAboutHref === '#/about' && mobileMenuVisible && mobileMenuClosed && activityItems.join('|') === expectedItems.join('|') });
+    checks.push({ profile: 'mobile-header', primaryBrandVisible, partnerBrandVisible, primaryBrandLoaded, partnerBrandLoaded, activityItems, mobileHomeHref, mobileTeamNumberHref, mobileAboutHref, mobileMenuVisible, mobileMenuClosed, valid: primaryBrandVisible && partnerBrandVisible && primaryBrandLoaded && partnerBrandLoaded && mobileHomeHref === '#/home' && mobileTeamNumberHref === '#/team-number' && mobileAboutHref === '#/about' && mobileMenuVisible && mobileMenuClosed && activityItems.join('|') === expectedItems.join('|') });
   }
   await page.locator('.event-card a').first().click();
   await page.waitForLoadState('networkidle');
@@ -339,11 +347,12 @@ await userPage.locator('.guide-markdown img').evaluateAll(async (images) => {
 const guideTitle = await userPage.locator('.guide-markdown h1').first().textContent();
 const guideImageSrcs = await userPage.locator('.guide-markdown img').evaluateAll((images) => images.map((image) => image.getAttribute('src')));
 const guideImagesLoaded = await userPage.locator('.guide-markdown img').evaluateAll((images) => images.every((image) => image.naturalWidth > 0 && image.naturalHeight > 0));
+const guideOrderedListCount = await userPage.locator('.guide-markdown ol').count();
 const guideRecfEventsLink = userPage.locator('.guide-markdown a[href="https://www.recfevents.org"]').first();
 const guideMarkdownResponse = await userContext.request.get(`${base}/content/recf-team-registration-guide.md`);
 const guideAssetResponse = await userContext.request.get(`${base}/assets/guides/recf-team-registration/RECFeventsregisternow.png`);
 await userPage.screenshot({ path: `${output}/desktop-team-number-guide.png`, fullPage: true });
-checks.push({ profile: 'team-number-help', href: teamNumberGuideHref, helpPathHeadings, internalGuideHref, committeeHelpText, guideTitle, imageCount: guideImageSrcs.length, guideImagesLoaded, firstImage: guideImageSrcs[0], markdownContentType: guideMarkdownResponse.headers()['content-type'], firstImageContentType: guideAssetResponse.headers()['content-type'], overflow: await userPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1), valid: teamNumberGuideHref === '#/team-number' && helpPathHeadings.join('|') === '已有官方编号|尚无官方战队编号|无官方战队编号注册条件' && internalGuideHref === '#/team-number/guide' && committeeHelpText.includes('654849662@qq.com') && committeeHelpText.includes('13761393714') && guideTitle === '在 RECFEvents 中注册赛队编号' && guideImageSrcs.length === 18 && guideImageSrcs.every((src) => src?.startsWith('/assets/guides/recf-team-registration/')) && guideImagesLoaded && guideMarkdownResponse.ok() && guideMarkdownResponse.headers()['content-type']?.includes('text/markdown') && guideAssetResponse.ok() && guideAssetResponse.headers()['content-type']?.startsWith('image/png') && await guideRecfEventsLink.count() >= 1 && !(await userPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)) });
+checks.push({ profile: 'team-number-help', href: teamNumberGuideHref, helpPathHeadings, internalGuideHref, committeeHelpText, guideTitle, imageCount: guideImageSrcs.length, guideImagesLoaded, guideOrderedListCount, firstImage: guideImageSrcs[0], markdownContentType: guideMarkdownResponse.headers()['content-type'], firstImageContentType: guideAssetResponse.headers()['content-type'], overflow: await userPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1), valid: teamNumberGuideHref === '#/team-number' && helpPathHeadings.join('|') === '已有官方编号|尚无官方战队编号|无官方战队编号注册条件' && internalGuideHref === '#/team-number/guide' && committeeHelpText.includes('654849662@qq.com') && committeeHelpText.includes('13761393714') && guideTitle === '在 RECFEvents 中注册赛队编号' && guideImageSrcs.length === 18 && guideImageSrcs.every((src) => src?.startsWith('/assets/guides/recf-team-registration/')) && guideImagesLoaded && guideOrderedListCount === 0 && guideMarkdownResponse.ok() && guideMarkdownResponse.headers()['content-type']?.includes('text/markdown') && guideAssetResponse.ok() && guideAssetResponse.headers()['content-type']?.startsWith('image/png') && await guideRecfEventsLink.count() >= 1 && !(await userPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)) });
 for (const [index, name] of [['02', '视觉第二教练'], ['03', '视觉第三教练']]) {
   const coachResponse = await userContext.request.post(`${base}/api/coaches`, { headers: { 'X-CSRF-Token': userAuth.csrfToken }, data: { name, gender: '男', phone: `138000000${index}`, org_name: '瑞卜德实验学校', email: `visual-coach-${index}@example.com`, nationality: '中国' } });
   if (!coachResponse.ok()) throw new Error(`Coach setup failed: ${coachResponse.status()} ${await coachResponse.text()}`);
