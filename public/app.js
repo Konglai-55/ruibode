@@ -791,7 +791,6 @@ function setHomeSlide(index) {
     dot.classList.toggle('active', selected);
     dot.setAttribute('aria-current', selected ? 'true' : 'false');
   });
-  root.classList.toggle('is-logo-slide-active', slides[active].classList.contains('is-logo-only'));
 }
 
 function startHomeCarousel() {

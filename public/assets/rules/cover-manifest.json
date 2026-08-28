@@ -1,0 +1,20 @@
+[
+  {
+    "program": "RECF Engage",
+    "pdf": "RECF·飞跃巅峰·小初塑料·1.1.pdf",
+    "cover": "recf-engage-cover.png",
+    "pdfSha256": "40c72978fa6947676c06620546d4fc0a3f5c1e92733b1c685009009734298c5e"
+  },
+  {
+    "program": "RECF Achieve",
+    "pdf": "RECF·高瞻远瞩·初高金属·1.2.pdf",
+    "cover": "recf-achieve-cover.png",
+    "pdfSha256": "f3d8ef20b40c487692dd467aee46cc7c5138e78e226660958e70fb8c1c5562c0"
+  },
+  {
+    "program": "RECF Inspire",
+    "pdf": "RECF·高瞻远瞩·大学金属·1.2.pdf",
+    "cover": "recf-inspire-cover.png",
+    "pdfSha256": "d7a6e037edd958dc35d529368eb9402955290a4e402417dfc9394996263529b3"
+  }
+]
