@@ -45,9 +45,9 @@ const CANCELLED_REGISTRATION_REAPPLY_MESSAGE = '您的赛队已取消参赛，�
 const RULE_PROGRAMS = Object.freeze([
   {
     id: 'recf-engage',
-    shortName: 'Engage',
-    title: 'RECF Engage Robotics Competition',
-    game: '飞跃巅峰 · Tier Takeover',
+    shortName: 'RECF Engage 小初塑料',
+    title: 'RECF Engage·飞跃巅峰·小初塑料',
+    game: 'Tier Takeover',
     version: '中文赛事手册 1.1',
     cover: '/assets/rules/recf-engage-cover.png',
     pdf: '/assets/rules/RECF·飞跃巅峰·小初塑料·1.1.pdf',
@@ -56,9 +56,9 @@ const RULE_PROGRAMS = Object.freeze([
   },
   {
     id: 'recf-achieve',
-    shortName: 'Achieve',
-    title: 'RECF Achieve Robotics Competition',
-    game: '高瞻远瞩 · Pinnacle',
+    shortName: 'RECF Achieve 初高金属',
+    title: 'RECF Achieve·高瞻远瞩·初高金属',
+    game: 'Pinnacle',
     version: '中文规则 1.2',
     cover: '/assets/rules/recf-achieve-cover.png',
     pdf: '/assets/rules/RECF·高瞻远瞩·初高金属·1.2.pdf',
@@ -67,9 +67,9 @@ const RULE_PROGRAMS = Object.freeze([
   },
   {
     id: 'recf-inspire',
-    shortName: 'Inspire',
-    title: 'RECF Inspire Robotics Competition',
-    game: '高瞻远瞩 · Pinnacle',
+    shortName: 'RECF Inspire 大学金属',
+    title: 'RECF Inspire·高瞻远瞩·大学金属',
+    game: 'Pinnacle',
     version: '中文规则 1.2',
     cover: '/assets/rules/recf-inspire-cover.png',
     pdf: '/assets/rules/RECF·高瞻远瞩·大学金属·1.2.pdf',

@@ -250,10 +250,16 @@ for (const profile of [
   });
   const coversLoaded = await page.locator('.rule-cover img').evaluateAll((images) => images.every((image) => image.naturalWidth > 0 && image.naturalHeight > 0));
   const pdfLinks = await page.locator('a[href$=".pdf"]').count();
+  const tabLabels = (await page.locator('.rules-tabs a').allTextContents()).map((text) => text.trim());
+  const programTitles = (await page.locator('.rule-program h2').allTextContents()).map((text) => text.trim());
+  const pdfHrefs = await page.locator('.rule-actions a[download]').evaluateAll((links) => links.map((link) => link.getAttribute('href')));
   const rulesNavHref = await page.locator('.desktop-nav a', { hasText: '赛事规则' }).getAttribute('href');
   await page.screenshot({ path: `${output}/${profile.name}.png`, fullPage: true });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
-  checks.push({ profile: profile.name, programs, coversLoaded, pdfLinks, rulesNavHref, overflow, valid: programs === 3 && coversLoaded && pdfLinks === 9 && rulesNavHref === '#/rules' && !overflow });
+  const expectedTabLabels = ['RECF Engage 小初塑料', 'RECF Achieve 初高金属', 'RECF Inspire 大学金属'];
+  const expectedProgramTitles = ['RECF Engage·飞跃巅峰·小初塑料', 'RECF Achieve·高瞻远瞩·初高金属', 'RECF Inspire·高瞻远瞩·大学金属'];
+  const expectedPdfHrefs = ['/assets/rules/RECF·飞跃巅峰·小初塑料·1.1.pdf', '/assets/rules/RECF·高瞻远瞩·初高金属·1.2.pdf', '/assets/rules/RECF·高瞻远瞩·大学金属·1.2.pdf'];
+  checks.push({ profile: profile.name, programs, coversLoaded, pdfLinks, tabLabels, programTitles, pdfHrefs, rulesNavHref, overflow, valid: programs === 3 && coversLoaded && pdfLinks === 9 && tabLabels.join('|') === expectedTabLabels.join('|') && programTitles.join('|') === expectedProgramTitles.join('|') && pdfHrefs.join('|') === expectedPdfHrefs.join('|') && rulesNavHref === '#/rules' && !overflow });
   await context.close();
 }
 
