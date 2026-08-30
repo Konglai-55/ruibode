@@ -829,7 +829,7 @@ function homePage() {
   const heroSlides = [
     { file: 'hero-recf.png', alt: 'RECF 赛事品牌展示', href: recfPartnerUrl },
     { file: 'hero-vex.jpg', alt: '机器人竞赛现场展示', scrollTarget: 'home-programs' },
-    { src: '/assets/ruibude-logo.jpg', alt: '上海瑞卜德教育商标', href: robotVexBannerUrl, logoOnly: true },
+    { src: '/assets/home/hero-ruibude-logo.png', alt: '上海瑞卜德教育商标', href: robotVexBannerUrl, logoOnly: true },
     { file: 'hero-robots-1.jpg', alt: '无人机竞赛视频展示', href: droneVideoUrl },
     { file: 'hero-robots-2.jpg', alt: '无人机竞赛视频展示', href: droneVideoUrl },
   ];
