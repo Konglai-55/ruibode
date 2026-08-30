@@ -15,6 +15,7 @@ const dir = await mkdtemp(join(tmpdir(), 'ruibude-visual-check-'));
   const { server, db } = await createApplication({
     dbPath: join(dir, 'visual.db'),
     uploadDir: join(dir, 'uploads'),
+    ruleDir: join(dir, 'rules'),
   });
   await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
   base = `http://127.0.0.1:${server.address().port}`;
@@ -250,17 +251,20 @@ for (const profile of [
     }));
   });
   const coversLoaded = await page.locator('.rule-cover img').evaluateAll((images) => images.every((image) => image.naturalWidth > 0 && image.naturalHeight > 0));
-  const pdfLinks = await page.locator('a[href$=".pdf"]').count();
+  const pdfLinks = await page.locator('a[href*="/api/rules/"][href*="/file"]').count();
   const tabLabels = (await page.locator('.rules-tabs a').allTextContents()).map((text) => text.trim());
   const programTitles = (await page.locator('.rule-program h2').allTextContents()).map((text) => text.trim());
   const pdfHrefs = await page.locator('.rule-actions a[download]').evaluateAll((links) => links.map((link) => link.getAttribute('href')));
+  const pdfNames = await page.locator('.rule-actions a[download]').evaluateAll((links) => links.map((link) => link.getAttribute('download')));
   const rulesNavHref = await page.locator('.desktop-nav a', { hasText: '赛事规则' }).getAttribute('href');
   await page.screenshot({ path: `${output}/${profile.name}.png`, fullPage: true });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
   const expectedTabLabels = ['RECF Engage 小初塑料', 'RECF Achieve 初高金属', 'RECF Inspire 大学金属'];
   const expectedProgramTitles = ['RECF Engage·飞跃巅峰·小初塑料', 'RECF Achieve·高瞻远瞩·初高金属', 'RECF Inspire·高瞻远瞩·大学金属'];
-  const expectedPdfHrefs = ['/assets/rules/RECF·飞跃巅峰·小初塑料·1.1.pdf', '/assets/rules/RECF·高瞻远瞩·初高金属·1.2.pdf', '/assets/rules/RECF·高瞻远瞩·大学金属·1.2.pdf'];
-  checks.push({ profile: profile.name, programs, coversLoaded, pdfLinks, tabLabels, programTitles, pdfHrefs, rulesNavHref, overflow, valid: programs === 3 && coversLoaded && pdfLinks === 9 && tabLabels.join('|') === expectedTabLabels.join('|') && programTitles.join('|') === expectedProgramTitles.join('|') && pdfHrefs.join('|') === expectedPdfHrefs.join('|') && rulesNavHref === '#/rules' && !overflow });
+  const expectedRuleKeys = ['engage', 'achieve', 'inspire'];
+  const expectedPdfNames = ['RECF·飞跃巅峰·小初塑料·1.1.pdf', 'RECF·高瞻远瞩·初高金属·1.2.pdf', 'RECF·高瞻远瞩·大学金属·1.2.pdf'];
+  const pdfHrefsValid = pdfHrefs.every((href, index) => href?.startsWith(`/api/rules/${expectedRuleKeys[index]}/file?download=1&v=`));
+  checks.push({ profile: profile.name, programs, coversLoaded, pdfLinks, tabLabels, programTitles, pdfHrefs, pdfNames, rulesNavHref, overflow, valid: programs === 3 && coversLoaded && pdfLinks === 9 && tabLabels.join('|') === expectedTabLabels.join('|') && programTitles.join('|') === expectedProgramTitles.join('|') && pdfHrefsValid && pdfNames.join('|') === expectedPdfNames.join('|') && rulesNavHref === '#/rules' && !overflow });
   await context.close();
 }
 
@@ -355,11 +359,13 @@ const guideTitle = await userPage.locator('.guide-markdown h1').first().textCont
 const guideImageSrcs = await userPage.locator('.guide-markdown img').evaluateAll((images) => images.map((image) => image.getAttribute('src')));
 const guideImagesLoaded = await userPage.locator('.guide-markdown img').evaluateAll((images) => images.every((image) => image.naturalWidth > 0 && image.naturalHeight > 0));
 const guideOrderedListCount = await userPage.locator('.guide-markdown ol').count();
-const guideRecfEventsLink = userPage.locator('.guide-markdown a[href="https://www.recfevents.org"]').first();
+const guideOrderedListItems = await userPage.locator('.guide-markdown ol li').count();
+const guideOrderedListStarts = await userPage.locator('.guide-markdown ol').evaluateAll((lists) => lists.map((list) => list.start));
+const guideRecfEventsLink = userPage.locator('.guide-markdown a[href^="https://recfevents.org"]').first();
 const guideMarkdownResponse = await userContext.request.get(`${base}/content/recf-team-registration-guide.md`);
-const guideAssetResponse = await userContext.request.get(`${base}/assets/guides/recf-team-registration/RECFeventsregisternow.png`);
+const guideAssetResponse = await userContext.request.get(`${base}/assets/guides/recf-team-registration/login.png`);
 await userPage.screenshot({ path: `${output}/desktop-team-number-guide.png`, fullPage: true });
-checks.push({ profile: 'team-number-help', href: teamNumberGuideHref, helpPathHeadings, internalGuideHref, committeeHelpText, guideTitle, imageCount: guideImageSrcs.length, guideImagesLoaded, guideOrderedListCount, firstImage: guideImageSrcs[0], markdownContentType: guideMarkdownResponse.headers()['content-type'], firstImageContentType: guideAssetResponse.headers()['content-type'], overflow: await userPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1), valid: teamNumberGuideHref === '#/team-number' && helpPathHeadings.join('|') === '已有官方编号|尚无官方战队编号|无官方战队编号注册条件' && internalGuideHref === '#/team-number/guide' && committeeHelpText.includes('654849662@qq.com') && committeeHelpText.includes('13761393714') && guideTitle === '在 RECFEvents 中注册赛队编号' && guideImageSrcs.length === 18 && guideImageSrcs.every((src) => src?.startsWith('/assets/guides/recf-team-registration/')) && guideImagesLoaded && guideOrderedListCount === 0 && guideMarkdownResponse.ok() && guideMarkdownResponse.headers()['content-type']?.includes('text/markdown') && guideAssetResponse.ok() && guideAssetResponse.headers()['content-type']?.startsWith('image/png') && await guideRecfEventsLink.count() >= 1 && !(await userPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)) });
+checks.push({ profile: 'team-number-help', href: teamNumberGuideHref, helpPathHeadings, internalGuideHref, committeeHelpText, guideTitle, imageCount: guideImageSrcs.length, guideImagesLoaded, guideOrderedListCount, guideOrderedListItems, guideOrderedListStarts, firstImage: guideImageSrcs[0], markdownContentType: guideMarkdownResponse.headers()['content-type'], firstImageContentType: guideAssetResponse.headers()['content-type'], overflow: await userPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1), valid: teamNumberGuideHref === '#/team-number' && helpPathHeadings.join('|') === '已有官方编号|尚无官方战队编号|无官方战队编号注册条件' && internalGuideHref === '#/team-number/guide' && committeeHelpText.includes('654849662@qq.com') && committeeHelpText.includes('13761393714') && guideTitle === '在 RECFEvents 中注册赛队编号' && guideImageSrcs.length === 30 && guideImageSrcs[0] === '/assets/guides/recf-team-registration/login.png' && guideImageSrcs.every((src) => src?.startsWith('/assets/guides/recf-team-registration/')) && guideImagesLoaded && guideOrderedListCount === 5 && guideOrderedListItems === 5 && guideOrderedListStarts.join('|') === '1|2|3|4|5' && guideMarkdownResponse.ok() && guideMarkdownResponse.headers()['content-type']?.includes('text/markdown') && guideAssetResponse.ok() && guideAssetResponse.headers()['content-type']?.startsWith('image/png') && await guideRecfEventsLink.count() >= 1 && !(await userPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)) });
 for (const [index, name] of [['02', '视觉第二教练'], ['03', '视觉第三教练']]) {
   const coachResponse = await userContext.request.post(`${base}/api/coaches`, { headers: { 'X-CSRF-Token': userAuth.csrfToken }, data: { name, gender: '男', phone: `138000000${index}`, org_name: '瑞卜德实验学校', email: `visual-coach-${index}@example.com`, nationality: '中国' } });
   if (!coachResponse.ok()) throw new Error(`Coach setup failed: ${coachResponse.status()} ${await coachResponse.text()}`);
@@ -420,7 +426,7 @@ await userPage.waitForURL(/#\/team-number\/guide$/);
 await userPage.locator('.team-number-guide-document').waitFor({ state: 'visible' });
 await userPage.screenshot({ path: `${output}/mobile-team-number-guide.png`, fullPage: true });
 const mobileGuideImageCount = await userPage.locator('.guide-markdown img').count();
-checks.push({ profile: 'mobile-team-number-help', paths: mobileHelpPathCount, imageCount: mobileGuideImageCount, overflow: await userPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1), valid: mobileHelpPathCount === 3 && mobileGuideImageCount === 18 && !(await userPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)) });
+checks.push({ profile: 'mobile-team-number-help', paths: mobileHelpPathCount, imageCount: mobileGuideImageCount, overflow: await userPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1), valid: mobileHelpPathCount === 3 && mobileGuideImageCount === 30 && !(await userPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)) });
 await userPage.setViewportSize({ width: 1440, height: 1000 });
 const featureAdminContext = await browser.newContext();
 const featureAdminAuth = await login(featureAdminContext, 'admin@ruibude.local', 'Admin123!');
@@ -548,6 +554,29 @@ await adminPage.goto(`${base}/#/admin`, { waitUntil: 'networkidle' });
 await adminPage.screenshot({ path: `${output}/desktop-admin.png`, fullPage: true });
 const adminTeamNavVisible = await adminPage.getByRole('link', { name: '已有战队管理' }).isVisible();
 checks.push({ profile: 'admin', title: await adminPage.locator('h1').first().textContent(), teamNavVisible: adminTeamNavVisible, overflow: await adminPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1), valid: adminTeamNavVisible });
+await adminPage.goto(`${base}/#/admin/rules`, { waitUntil: 'networkidle' });
+await adminPage.locator('.admin-rule-card').first().waitFor({ state: 'visible' });
+await adminPage.locator('.admin-rule-cover img').evaluateAll(async (images) => {
+  await Promise.all(images.map((image) => {
+    if (image.complete && image.naturalWidth > 0) return Promise.resolve();
+    return new Promise((resolveImage) => { image.addEventListener('load', resolveImage, { once: true }); image.addEventListener('error', resolveImage, { once: true }); });
+  }));
+});
+const adminRuleCards = await adminPage.locator('.admin-rule-card').count();
+const adminRuleInputs = await adminPage.locator('[data-rule-file]').count();
+const adminRuleCoversLoaded = await adminPage.locator('.admin-rule-cover img').evaluateAll((images) => images.every((image) => image.naturalWidth > 0 && image.naturalHeight > 0));
+const adminRuleNavVisible = await adminPage.getByRole('link', { name: '规则文件管理', exact: true }).isVisible();
+const adminRuleDesktopOverflow = await adminPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
+await adminPage.screenshot({ path: `${output}/desktop-admin-rules.png`, fullPage: true });
+checks.push({ profile: 'admin-rules', cards: adminRuleCards, inputs: adminRuleInputs, coversLoaded: adminRuleCoversLoaded, navVisible: adminRuleNavVisible, overflow: adminRuleDesktopOverflow, valid: adminRuleCards === 3 && adminRuleInputs === 3 && adminRuleCoversLoaded && adminRuleNavVisible && !adminRuleDesktopOverflow });
+await adminPage.setViewportSize({ width: 375, height: 812 });
+await adminPage.goto(`${base}/#/admin/rules`, { waitUntil: 'networkidle' });
+await adminPage.locator('.admin-rule-card').first().waitFor({ state: 'visible' });
+const mobileAdminRuleCards = await adminPage.locator('.admin-rule-card').count();
+const mobileAdminRuleOverflow = await adminPage.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
+await adminPage.screenshot({ path: `${output}/mobile-admin-rules.png`, fullPage: true });
+checks.push({ profile: 'mobile-admin-rules', cards: mobileAdminRuleCards, overflow: mobileAdminRuleOverflow, valid: mobileAdminRuleCards === 3 && !mobileAdminRuleOverflow });
+await adminPage.setViewportSize({ width: 1440, height: 1000 });
 await adminPage.goto(`${base}/#/admin/users?q=${encodeURIComponent('张小航')}`, { waitUntil: 'networkidle' });
 await adminPage.getByRole('link', { name: '查看完整资料' }).waitFor({ state: 'visible' });
 const adminUserRows = await adminPage.locator('.desktop-table tbody tr').count();

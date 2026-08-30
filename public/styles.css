@@ -466,6 +466,24 @@ textarea.form-control { min-height: 120px; resize: vertical; }
 .portal-layout { display: grid; grid-template-columns: 252px minmax(0,1fr); gap: 22px; align-items: start; }
 .admin-portal > .container { width: min(calc(100% - 32px), 1440px); }
 .admin-portal .portal-layout { grid-template-columns: 220px minmax(0,1fr); gap: 20px; }
+.admin-rule-notice { margin-bottom: 20px; }
+.admin-rule-list { display: grid; gap: 18px; }
+.admin-rule-card { display: grid; grid-template-columns: 170px minmax(0,1fr); gap: 22px; padding: 20px; border: 1px solid var(--border-light); border-radius: 4px; background: #fff; }
+.admin-rule-cover { align-self: start; overflow: hidden; border: 1px solid var(--border); border-radius: 3px; background: var(--surface-soft); }
+.admin-rule-cover:hover { border-color: var(--primary); }
+.admin-rule-cover img { width: 100%; height: auto; aspect-ratio: 17/22; display: block; object-fit: cover; }
+.admin-rule-content { min-width: 0; }
+.admin-rule-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--border-light); }
+.admin-rule-heading h2 { margin: 3px 0 0; font-size: 21px; line-height: 1.35; }
+.admin-rule-meta { display: grid; grid-template-columns: minmax(0,2fr) minmax(110px,.7fr) minmax(150px,1fr); gap: 1px; margin: 14px 0 18px; background: var(--border-light); border: 1px solid var(--border-light); }
+.admin-rule-meta div { min-width: 0; padding: 10px 12px; background: var(--surface-soft); }
+.admin-rule-meta dt { color: var(--muted-text); font-size: 12px; }
+.admin-rule-meta dd { margin: 3px 0 0; overflow-wrap: anywhere; font-weight: 650; }
+.admin-rule-form { padding-top: 2px; }
+.admin-rule-file { padding: 8px 10px; cursor: pointer; }
+.admin-rule-selected { min-height: 24px; margin: 7px 0 0; color: var(--foreground); font-size: 14px; font-weight: 650; overflow-wrap: anywhere; }
+.admin-rule-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.admin-rule-actions .button { min-height: 44px; }
 .sidebar { position: sticky; top: calc(var(--header-height) + 24px); overflow: hidden; background: #fff; border: 1px solid var(--border-light); border-radius: 4px; }
 .sidebar-head { padding: 20px; border-bottom: 1px solid var(--border-light); }
 .sidebar-head strong, .sidebar-head small { display: block; overflow: hidden; text-overflow: ellipsis; }
@@ -701,6 +719,8 @@ textarea.form-control { min-height: 120px; resize: vertical; }
   .portal { padding-top: 20px; }
   .admin-portal > .container { width: min(calc(100% - 24px), var(--container)); }
   .admin-portal .portal-layout { grid-template-columns: 1fr; }
+  .admin-rule-card { grid-template-columns: 140px minmax(0,1fr); }
+  .admin-rule-meta { grid-template-columns: 1fr; }
   .portal-layout { grid-template-columns: 1fr; gap: 18px; }
   .sidebar { position: static; overflow-x: auto; border-radius: 4px; }
   .sidebar-head { display: none; }
@@ -721,6 +741,11 @@ textarea.form-control { min-height: 120px; resize: vertical; }
 }
 
 @media (max-width: 620px) {
+  .admin-rule-card { grid-template-columns: 1fr; padding: 16px; }
+  .admin-rule-cover { width: min(100%,220px); margin-inline: auto; }
+  .admin-rule-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .admin-rule-actions { display: grid; grid-template-columns: 1fr; }
+  .admin-rule-actions .button { width: 100%; }
   body { font-size: 16px; }
   .page-section { padding-block: 38px 52px; }
   .home-block { padding-top: 18px; }

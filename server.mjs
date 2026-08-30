@@ -1,9 +1,10 @@
 import http from 'node:http';
 import tls from 'node:tls';
-import { readFile, writeFile, mkdir, stat, unlink } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, stat, unlink, copyFile, mkdtemp, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { extname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomBytes, randomInt, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { createInterface } from 'node:readline';
@@ -17,7 +18,9 @@ if (existsSync(ENV_FILE)) process.loadEnvFile(ENV_FILE);
 const PUBLIC_DIR = join(ROOT, 'public');
 const DATA_DIR = join(ROOT, 'data');
 const UPLOAD_DIR = join(DATA_DIR, 'uploads');
+const RULE_DIR = join(DATA_DIR, 'rules');
 const BODY_LIMIT = 30 * 1024 * 1024;
+const RULE_PDF_LIMIT = 60 * 1024 * 1024;
 const SESSION_DAYS = 14;
 const AUTH_VERIFICATION_TTL_MINUTES = 10;
 const AUTH_VERIFICATION_TTL_MS = AUTH_VERIFICATION_TTL_MINUTES * 60_000;
@@ -41,6 +44,29 @@ const DEFAULT_EVENT_GROUPS = Object.freeze([
   'RECF-Engage 创新小学组',
   'RECF-Engage 创新初中组',
   'RECF-Inspire 创新大学组',
+]);
+const RULE_DOCUMENTS = Object.freeze([
+  {
+    key: 'engage',
+    program: 'RECF Engage',
+    title: 'RECF Engage·飞跃巅峰·小初塑料',
+    defaultFileName: 'RECF·飞跃巅峰·小初塑料·1.1.pdf',
+    defaultCoverName: 'recf-engage-cover.png',
+  },
+  {
+    key: 'achieve',
+    program: 'RECF Achieve',
+    title: 'RECF Achieve·高瞻远瞩·初高金属',
+    defaultFileName: 'RECF·高瞻远瞩·初高金属·1.2.pdf',
+    defaultCoverName: 'recf-achieve-cover.png',
+  },
+  {
+    key: 'inspire',
+    program: 'RECF Inspire',
+    title: 'RECF Inspire·高瞻远瞩·大学金属',
+    defaultFileName: 'RECF·高瞻远瞩·大学金属·1.2.pdf',
+    defaultCoverName: 'recf-inspire-cover.png',
+  },
 ]);
 const DUPLICATE_TEAM_NUMBER_MESSAGE = '该战队编号已被其他队伍注册（已被占用）\n\n如果您输入的确实是 RECF 官方分配给您的战队编号，但系统提示已被占用，请联系组委会协助核实处理：\n\n组委会邮箱：654849662@qq.com\n\n咨询电话：13761393714（小周老师）';
 const CANCELLED_REGISTRATION_REAPPLY_MESSAGE = '您的赛队已取消参赛，若要重新参赛，请于右上角下拉栏 -> 我的比赛 -> 对应比赛打开列表 -> 重新申请参赛';
@@ -164,16 +190,23 @@ function cookie(name, value, options = {}) {
   return parts.join('; ');
 }
 
-async function bodyJson(req) {
+async function bodyBuffer(req, maxBytes = BODY_LIMIT) {
+  const declaredLength = Number(req.headers['content-length'] || 0);
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) throw fail(413, `提交内容过大，单次请求不得超过 ${Math.ceil(maxBytes / 1024 / 1024)}MB`);
   let size = 0;
   const chunks = [];
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > BODY_LIMIT) throw fail(413, '提交内容过大，单次请求不得超过 30MB');
+    if (size > maxBytes) throw fail(413, `提交内容过大，单次请求不得超过 ${Math.ceil(maxBytes / 1024 / 1024)}MB`);
     chunks.push(chunk);
   }
-  if (!chunks.length) return {};
-  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+  return Buffer.concat(chunks);
+}
+
+async function bodyJson(req) {
+  const buffer = await bodyBuffer(req);
+  if (!buffer.length) return {};
+  try { return JSON.parse(buffer.toString('utf8')); }
   catch { throw fail(400, '请求内容不是有效的 JSON'); }
 }
 
@@ -1426,6 +1459,194 @@ async function saveUpload(body, uploadDir, user, db) {
   return uploadUrl;
 }
 
+function ruleDocumentConfig(key) {
+  return RULE_DOCUMENTS.find((item) => item.key === key) || null;
+}
+
+function ruleManifestPath(ruleDir) {
+  return join(ruleDir, 'manifest.json');
+}
+
+async function readRuleManifest(ruleDir) {
+  try {
+    const value = JSON.parse(await readFile(ruleManifestPath(ruleDir), 'utf8'));
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+async function writeRuleManifest(ruleDir, manifest) {
+  const temporaryPath = join(ruleDir, `.manifest-${randomBytes(6).toString('hex')}.json`);
+  await writeFile(temporaryPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  try {
+    await copyFile(temporaryPath, ruleManifestPath(ruleDir));
+  } finally {
+    await unlink(temporaryPath).catch(() => {});
+  }
+}
+
+function ruleStoredPdfPath(ruleDir, key, fileName = `${key}.pdf`) {
+  if (!new RegExp(`^${key}(?:-[a-f0-9]+)?\\.pdf$`).test(fileName)) return join(ruleDir, `${key}.pdf`);
+  return join(ruleDir, fileName);
+}
+
+function ruleStoredCoverPath(ruleDir, key, fileName = `${key}.png`) {
+  if (!new RegExp(`^${key}(?:-[a-f0-9]+)?\\.png$`).test(fileName)) return join(ruleDir, `${key}.png`);
+  return join(ruleDir, fileName);
+}
+
+async function resolvedRuleDocument(ruleDir, config, manifest = null) {
+  const records = manifest || await readRuleManifest(ruleDir);
+  const override = records[config.key];
+  const overridePdf = ruleStoredPdfPath(ruleDir, config.key, override?.pdfFile);
+  const overrideCover = ruleStoredCoverPath(ruleDir, config.key, override?.coverFile);
+  const hasOverride = Boolean(override && existsSync(overridePdf) && existsSync(overrideCover));
+  const pdfPath = hasOverride ? overridePdf : join(PUBLIC_DIR, 'assets', 'rules', config.defaultFileName);
+  const coverPath = hasOverride ? overrideCover : join(PUBLIC_DIR, 'assets', 'rules', config.defaultCoverName);
+  const pdfInfo = await stat(pdfPath);
+  const version = hasOverride ? String(override.updatedAt || pdfInfo.mtime.toISOString()) : pdfInfo.mtime.toISOString();
+  return {
+    key: config.key,
+    program: config.program,
+    title: config.title,
+    filename: hasOverride ? String(override.filename || config.defaultFileName) : config.defaultFileName,
+    sizeBytes: pdfInfo.size,
+    updatedAt: version,
+    customized: hasOverride,
+    pdfPath,
+    coverPath,
+    viewUrl: `/api/rules/${config.key}/file?v=${encodeURIComponent(version)}`,
+    downloadUrl: `/api/rules/${config.key}/file?download=1&v=${encodeURIComponent(version)}`,
+    coverUrl: `/api/rules/${config.key}/cover?v=${encodeURIComponent(version)}`,
+  };
+}
+
+async function listRuleDocuments(ruleDir) {
+  const manifest = await readRuleManifest(ruleDir);
+  return Promise.all(RULE_DOCUMENTS.map((config) => resolvedRuleDocument(ruleDir, config, manifest)));
+}
+
+function publicRuleDocument(document) {
+  const { pdfPath, coverPath, ...safe } = document;
+  return safe;
+}
+
+function validateRuleUploadFileName(headerValue) {
+  let filename = '';
+  try { filename = decodeURIComponent(String(headerValue || '')); }
+  catch { throw fail(422, 'PDF 文件名无法识别，请重新选择文件'); }
+  if (!filename || filename.length > 180 || /[\x00-\x1f\x7f/\\]/.test(filename) || !filename.toLowerCase().endsWith('.pdf')) {
+    throw fail(422, '请上传文件名正常且扩展名为 .pdf 的规则文件');
+  }
+  return filename;
+}
+
+function renderRuleCover(pdfPath, coverPath) {
+  return new Promise((resolveRender, rejectRender) => {
+    const outputPrefix = coverPath.replace(/\.png$/i, '');
+    const child = spawn(process.env.PDFTOPPM_BIN || 'pdftoppm', [
+      '-f', '1', '-l', '1', '-singlefile', '-png', '-r', '100', pdfPath, outputPrefix,
+    ], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', (chunk) => { stderr = `${stderr}${chunk}`.slice(-3000); });
+    child.once('error', () => rejectRender(fail(503, '服务器缺少 PDF 封面处理组件，请联系技术人员安装 Poppler 后重试')));
+    child.once('exit', (code) => {
+      if (code === 0) resolveRender();
+      else rejectRender(fail(422, `无法读取该 PDF 的第一页，请确认文件完整且未加密${stderr.trim() ? `：${stderr.trim()}` : ''}`));
+    });
+  });
+}
+
+async function replaceRuleDocument({ ruleDir, key, filename, buffer, actor, coverRenderer = renderRuleCover }) {
+  const config = ruleDocumentConfig(key);
+  if (!config) throw fail(404, '未找到该赛事规则');
+  if (!buffer.length || buffer.length > RULE_PDF_LIMIT) throw fail(422, '规则 PDF 文件必须在 60MB 以内');
+  if (!uploadHasExpectedSignature(buffer, 'application/pdf')) throw fail(422, '文件内容不是有效的 PDF');
+  const temporaryDir = await mkdtemp(join(ruleDir, `.rule-${key}-`));
+  const temporaryPdf = join(temporaryDir, 'document.pdf');
+  const temporaryCover = join(temporaryDir, 'cover.png');
+  let storedPdf = '';
+  let storedCover = '';
+  try {
+    await writeFile(temporaryPdf, buffer);
+    await coverRenderer(temporaryPdf, temporaryCover);
+    const cover = await readFile(temporaryCover);
+    if (!uploadHasExpectedSignature(cover, 'image/png')) throw fail(422, 'PDF 首页封面生成失败，请确认文件完整');
+    const manifest = await readRuleManifest(ruleDir);
+    const previous = manifest[key];
+    const storageToken = `${Date.now().toString(16)}${randomBytes(6).toString('hex')}`;
+    const pdfFile = `${key}-${storageToken}.pdf`;
+    const coverFile = `${key}-${storageToken}.png`;
+    storedPdf = ruleStoredPdfPath(ruleDir, key, pdfFile);
+    storedCover = ruleStoredCoverPath(ruleDir, key, coverFile);
+    try {
+      await copyFile(temporaryPdf, storedPdf);
+      await copyFile(temporaryCover, storedCover);
+    } catch (error) {
+      await Promise.all([unlink(storedPdf).catch(() => {}), unlink(storedCover).catch(() => {})]);
+      throw error;
+    }
+    manifest[key] = {
+      filename,
+      updatedAt: nowIso(),
+      updatedBy: actor.id,
+      sizeBytes: buffer.length,
+      pdfFile,
+      coverFile,
+    };
+    try {
+      await writeRuleManifest(ruleDir, manifest);
+    } catch (error) {
+      await Promise.all([unlink(storedPdf).catch(() => {}), unlink(storedCover).catch(() => {})]);
+      throw error;
+    }
+    const document = await resolvedRuleDocument(ruleDir, config, manifest);
+    const previousPdf = previous ? ruleStoredPdfPath(ruleDir, key, previous.pdfFile) : '';
+    const previousCover = previous ? ruleStoredCoverPath(ruleDir, key, previous.coverFile) : '';
+    await Promise.all([
+      previousPdf && previousPdf !== storedPdf ? unlink(previousPdf).catch(() => {}) : null,
+      previousCover && previousCover !== storedCover ? unlink(previousCover).catch(() => {}) : null,
+    ]);
+    return document;
+  } finally {
+    await rm(temporaryDir, { recursive: true, force: true });
+  }
+}
+
+async function serveRuleAsset(req, res, url, ruleDir, key, asset) {
+  const config = ruleDocumentConfig(key);
+  if (!config || !['file', 'cover'].includes(asset)) throw fail(404, '规则文件不存在');
+  const document = await resolvedRuleDocument(ruleDir, config);
+  const filePath = asset === 'cover' ? document.coverPath : document.pdfPath;
+  const data = await readFile(filePath);
+  const headers = {
+    'Content-Type': asset === 'cover' ? 'image/png' : 'application/pdf',
+    'Cache-Control': 'public,max-age=3600',
+    'X-Content-Type-Options': 'nosniff',
+  };
+  if (asset === 'file') {
+    const disposition = url.searchParams.get('download') === '1' ? 'attachment' : 'inline';
+    headers['Content-Disposition'] = `${disposition}; filename="rule.pdf"; filename*=UTF-8''${encodeURIComponent(document.filename)}`;
+    headers['Accept-Ranges'] = 'bytes';
+  }
+  const range = asset === 'file' ? req.headers.range : '';
+  if (range) {
+    const match = /^bytes=(\d*)-(\d*)$/i.exec(range.trim());
+    const start = match?.[1] ? Number(match[1]) : 0;
+    const end = match?.[2] ? Math.min(Number(match[2]), data.length - 1) : data.length - 1;
+    if (!match || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= data.length) {
+      res.writeHead(416, { ...headers, 'Content-Range': `bytes */${data.length}` });
+      return res.end();
+    }
+    const chunk = data.subarray(start, end + 1);
+    res.writeHead(206, { ...headers, 'Content-Range': `bytes ${start}-${end}/${data.length}`, 'Content-Length': chunk.length });
+    return res.end(chunk);
+  }
+  res.writeHead(200, { ...headers, 'Content-Length': data.length });
+  res.end(data);
+}
+
 function matchRoute(pathname, pattern) {
   const names = [];
   const regex = new RegExp(`^${pattern.replace(/:([A-Za-z]+)/g, (_, name) => { names.push(name); return '([^/]+)'; })}$`);
@@ -1434,11 +1655,19 @@ function matchRoute(pathname, pattern) {
   return Object.fromEntries(names.map((name, index) => [name, decodeURIComponent(match[index + 1])]));
 }
 
-async function api(req, res, url, appDb, uploadDir) {
+async function api(req, res, url, appDb, uploadDir, ruleDir, ruleCoverRenderer) {
   const db = appDb.db;
   const path = url.pathname;
   const method = req.method;
   let params;
+
+  if (method === 'GET' && path === '/api/rules') {
+    const rules = (await listRuleDocuments(ruleDir)).map(publicRuleDocument);
+    return json(res, 200, { rules });
+  }
+  if ((params = matchRoute(path, '/api/rules/:key/:asset')) && method === 'GET') {
+    return serveRuleAsset(req, res, url, ruleDir, params.key, params.asset);
+  }
 
   if (method === 'GET' && path === '/api/captcha') {
     pruneTransientStores();
@@ -1906,6 +2135,17 @@ async function api(req, res, url, appDb, uploadDir) {
       teams:db.prepare('SELECT COUNT(*) count FROM teams').get().count,
     }});
   }
+  if ((params = matchRoute(path, '/api/admin/rules/:key')) && method === 'PUT') {
+    const actor = auth(req, appDb, 'admin');
+    if (actor.admin_level !== 'super') throw fail(403, '只有最高管理员可以替换赛事规则 PDF');
+    if (!String(req.headers['content-type'] || '').toLowerCase().startsWith('application/pdf')) throw fail(422, '赛事规则仅支持 PDF 文件');
+    const filename = validateRuleUploadFileName(req.headers['x-file-name']);
+    const ip = req.socket.remoteAddress || 'local';
+    if (!allowRate(`rule-upload-user:${actor.id}`, 12, 60 * 60_000) || !allowRate(`rule-upload-ip:${ip}`, 24, 60 * 60_000)) throw fail(429, '规则文件上传过于频繁，请稍后再试');
+    const buffer = await bodyBuffer(req, RULE_PDF_LIMIT);
+    const document = await replaceRuleDocument({ ruleDir, key: params.key, filename, buffer, actor, coverRenderer: ruleCoverRenderer });
+    return json(res, 200, { message: `${document.program} 规则 PDF 已替换，前台封面已同步更新`, rule: publicRuleDocument(document) });
+  }
   if (method === 'GET' && path === '/api/admin/events') {
     auth(req,appDb,'admin');
     const now = nowIso();
@@ -2247,8 +2487,11 @@ async function serveStatic(req, res, url, uploadDir = UPLOAD_DIR, appDb) {
 export async function createApplication({
   dbPath = process.env.DB_PATH || join(DATA_DIR, 'app.db'),
   uploadDir = UPLOAD_DIR,
+  ruleDir = process.env.RULE_DIR || RULE_DIR,
+  ruleCoverRenderer = renderRuleCover,
 } = {}) {
   await mkdir(uploadDir, { recursive: true });
+  await mkdir(ruleDir, { recursive: true });
   const appDb = new AppDatabase(dbPath);
   await appDb.seed();
   appDb.db.prepare('DELETE FROM sessions WHERE expires_at<=?').run(nowIso());
@@ -2264,7 +2507,7 @@ export async function createApplication({
     if (process.env.NODE_ENV === 'production') res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     try {
-      if (url.pathname.startsWith('/api/')) await api(req, res, url, appDb, uploadDir);
+      if (url.pathname.startsWith('/api/')) await api(req, res, url, appDb, uploadDir, ruleDir, ruleCoverRenderer);
       else await serveStatic(req, res, url, uploadDir, appDb);
     } catch (error) {
       if (res.headersSent) return res.end();

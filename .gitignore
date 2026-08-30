@@ -2,6 +2,7 @@ data/app.db*
 data/test-*.db*
 data/uploads/*
 !data/uploads/.gitkeep
+data/rules/*
 .env
 .DS_Store
 node_modules/

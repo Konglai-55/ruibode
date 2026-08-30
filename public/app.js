@@ -44,6 +44,7 @@ const DUPLICATE_REGISTRATION_MESSAGE = '该战队已报名此赛事';
 const CANCELLED_REGISTRATION_REAPPLY_MESSAGE = '您的赛队已取消参赛，若要重新参赛，请于右上角下拉栏 -> 我的比赛 -> 对应比赛打开列表 -> 重新申请参赛';
 const RULE_PROGRAMS = Object.freeze([
   {
+    key: 'engage',
     id: 'recf-engage',
     shortName: 'RECF Engage 小初塑料',
     title: 'RECF Engage·飞跃巅峰·小初塑料',
@@ -55,6 +56,7 @@ const RULE_PROGRAMS = Object.freeze([
     highlights: ['小学组（U12）或初中组（U15），每队 2 名及以上学生', '可使用指定的 VEX IQ、Hexbug、LEGO 电子元件与结构件', '允许符合规则的切割件及 3D 打印自制零件'],
   },
   {
+    key: 'achieve',
     id: 'recf-achieve',
     shortName: 'RECF Achieve 初高金属',
     title: 'RECF Achieve·高瞻远瞩·初高金属',
@@ -66,6 +68,7 @@ const RULE_PROGRAMS = Object.freeze([
     highlights: ['初中组（U15）或高中组（U19），每队 1 名及以上学生', '可使用 VEX V5、Robits、TETRIX MAX 等结构系统，电子系统统一使用 VEX V5', '允许符合规则的气动、切割塑料件及 3D 打印零件'],
   },
   {
+    key: 'inspire',
     id: 'recf-inspire',
     shortName: 'RECF Inspire 大学金属',
     title: 'RECF Inspire·高瞻远瞩·大学金属',
@@ -188,6 +191,7 @@ function renderMarkdown(value) {
   let paragraph = [];
   let listType = '';
   let listItems = [];
+  let listStart = 1;
   const flushParagraph = () => {
     if (!paragraph.length) return;
     output.push(`<p>${paragraph.map(markdownInline).join('<br>')}</p>`);
@@ -195,8 +199,9 @@ function renderMarkdown(value) {
   };
   const flushList = () => {
     if (!listItems.length) return;
-    output.push(`<${listType}>${listItems.map((item) => `<li>${markdownInline(item)}</li>`).join('')}</${listType}>`);
-    listType = ''; listItems = [];
+    const start = listType === 'ol' && listStart !== 1 ? ` start="${listStart}"` : '';
+    output.push(`<${listType}${start}>${listItems.map((item) => `<li>${markdownInline(item)}</li>`).join('')}</${listType}>`);
+    listType = ''; listItems = []; listStart = 1;
   };
   const flush = () => { flushParagraph(); flushList(); };
 
@@ -241,13 +246,14 @@ function renderMarkdown(value) {
       continue;
     }
     const unordered = line.match(/^\s*[-+*]\s+(.+)$/);
-    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    const ordered = line.match(/^\s*(\d+)[.)]\s+(.+)$/);
     if (unordered || ordered) {
       flushParagraph();
       const nextType = unordered ? 'ul' : 'ol';
       if (listType && listType !== nextType) flushList();
+      if (!listType) listStart = ordered ? Number(ordered[1]) : 1;
       listType = nextType;
-      listItems.push((unordered || ordered)[1]);
+      listItems.push(unordered ? unordered[1] : ordered[2]);
       continue;
     }
     flushList();
@@ -283,6 +289,11 @@ function formatDate(value, withTime = false) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return escapeHtml(value);
   return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', ...(withTime ? { hour: '2-digit', minute: '2-digit', hour12: false } : {}) }).format(date);
+}
+
+function formatFileSize(bytes) {
+  const size = Number(bytes) || 0;
+  return size >= 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(size / 1024))} KB`;
 }
 
 function toInputDate(value) {
@@ -968,9 +979,18 @@ async function eventsPage() {
   app.innerHTML = `<section id="events-list" class="page-section"><div class="container"><div class="page-head"><div><h1>赛事报名</h1><p class="lead">未开始的赛事优先展示，并按开赛时间排序。</p></div></div>${data.events.length ? `<div class="event-grid">${data.events.map(eventCard).join('')}</div>` : `<div class="empty-state"><div class="empty-icon">${icon('calendar',30)}</div><h2>暂无已发布赛事</h2><p>管理员发布赛事后会显示在这里。</p></div>`}</div></section>`;
 }
 
-function rulesPage() {
+async function rulesPage() {
+  let managedRules = [];
+  try { managedRules = (await apiFetch('/api/rules')).rules || []; } catch {}
   const tabs=RULE_PROGRAMS.map((program)=>`<a href="#/rules" data-action="scroll-rule" data-target="${program.id}">${escapeHtml(program.shortName)}</a>`).join('');
-  const programs=RULE_PROGRAMS.map((program,index)=>`<article class="rule-program" id="${program.id}"><div class="rule-program-copy"><span class="record-label">赛项 ${index+1} / ${RULE_PROGRAMS.length}</span><h2>${escapeHtml(program.title)}</h2><p class="rule-game-name">${escapeHtml(program.game)}</p><p>${escapeHtml(program.description)}</p><ul class="rule-highlights">${program.highlights.map((item)=>`<li><span aria-hidden="true">${icon('check',18)}</span><span>${escapeHtml(item)}</span></li>`).join('')}</ul><div class="rule-actions"><a class="button button-primary" href="${program.pdf}" target="_blank" rel="noopener noreferrer">${icon('file',18)}在线查看规则</a><a class="button button-secondary" href="${program.pdf}" download>${icon('download',18)}下载 PDF</a></div><p class="rule-version">${escapeHtml(program.version)} · PDF 原文件</p></div><a class="rule-cover" href="${program.pdf}" target="_blank" rel="noopener noreferrer" aria-label="在线查看 ${escapeHtml(program.title)} 规则手册"><img src="${program.cover}" alt="${escapeHtml(program.title)} ${escapeHtml(program.version)}封面" width="850" height="1100" loading="${index===0?'eager':'lazy'}"></a></article>`).join('');
+  const programs=RULE_PROGRAMS.map((program,index)=>{
+    const managed=managedRules.find((item)=>item.key===program.key);
+    const pdf=safeUrl(managed?.viewUrl||program.pdf);
+    const download=safeUrl(managed?.downloadUrl||program.pdf);
+    const cover=safeUrl(managed?.coverUrl||program.cover);
+    const filename=managed?.filename||program.pdf.split('/').pop();
+    return `<article class="rule-program" id="${program.id}"><div class="rule-program-copy"><span class="record-label">赛项 ${index+1} / ${RULE_PROGRAMS.length}</span><h2>${escapeHtml(program.title)}</h2><p class="rule-game-name">${escapeHtml(program.game)}</p><p>${escapeHtml(program.description)}</p><ul class="rule-highlights">${program.highlights.map((item)=>`<li><span aria-hidden="true">${icon('check',18)}</span><span>${escapeHtml(item)}</span></li>`).join('')}</ul><div class="rule-actions"><a class="button button-primary" href="${pdf}" target="_blank" rel="noopener noreferrer">${icon('file',18)}在线查看规则</a><a class="button button-secondary" href="${download}" download="${escapeHtml(filename)}">${icon('download',18)}下载 PDF</a></div><p class="rule-version">${escapeHtml(program.version)} · ${escapeHtml(filename)}</p></div><a class="rule-cover" href="${pdf}" target="_blank" rel="noopener noreferrer" aria-label="在线查看 ${escapeHtml(program.title)} 规则手册"><img src="${cover}" alt="${escapeHtml(program.title)} ${escapeHtml(program.version)}封面" width="850" height="1100" loading="${index===0?'eager':'lazy'}"></a></article>`;
+  }).join('');
   app.innerHTML=`<section class="page-section rules-page"><div class="container"><nav class="breadcrumb"><a href="#/events">赛事报名</a>${icon('chevron',14)}<span>赛事规则</span></nav><div class="page-head rules-head"><div><h1>RECF 三大赛项规则</h1><p class="lead">查阅 RECF Engage、Achieve 与 Inspire 的赛项说明及 2026–2027 赛季中文规则手册。</p></div><a class="button button-secondary" href="https://games.recf.org/" target="_blank" rel="noopener noreferrer">访问 RECF 官方规则中心${icon('arrow',18)}</a></div><nav class="rules-tabs" aria-label="赛项规则页内导航">${tabs}</nav><div class="info-banner rules-notice">${icon('info',22)}<div><strong>规则更新提示</strong><br>本页暂按现有中文手册版本发布；如赛事通知与后续官方版本有调整，请以赛事组委会最终公告及 RECF 官方规则为准。</div></div><div class="rule-programs">${programs}</div></div></section>`;
 }
 
@@ -1196,7 +1216,8 @@ function portalShell(title, description, content, action = '') {
 
 function adminShell(title, description, content, action = '') {
   const current = routeInfo().path;
-  return `<section class="portal admin-portal"><div class="container portal-layout"><aside class="sidebar"><div class="sidebar-head"><strong>赛事管理后台</strong><small>${escapeHtml(state.user.email)}</small></div><nav class="sidebar-nav" aria-label="管理后台导航">${sidebarLink('/admin','dashboard','管理概览',current)}${sidebarLink('/admin/events','calendar','赛事管理',current)}${sidebarLink('/admin/users','user','管理用户',current)}${sidebarLink('/admin/teams','flag','已有战队管理',current)}${sidebarLink('/admin/reviews','shield','赛事报名审核',current)}${sidebarLink('/admin/activity-applications','users','活动报名审核',current)}</nav></aside><div class="portal-main"><div class="portal-head"><div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(description)}</p></div>${action}</div>${content}</div></div></section>`;
+  const ruleManagement = normalizedAdminLevel(state.user) === 'super' ? sidebarLink('/admin/rules','file','规则文件管理',current) : '';
+  return `<section class="portal admin-portal"><div class="container portal-layout"><aside class="sidebar"><div class="sidebar-head"><strong>赛事管理后台</strong><small>${escapeHtml(state.user.email)}</small></div><nav class="sidebar-nav" aria-label="管理后台导航">${sidebarLink('/admin','dashboard','管理概览',current)}${sidebarLink('/admin/events','calendar','赛事管理',current)}${ruleManagement}${sidebarLink('/admin/users','user','管理用户',current)}${sidebarLink('/admin/teams','flag','已有战队管理',current)}${sidebarLink('/admin/reviews','shield','赛事报名审核',current)}${sidebarLink('/admin/activity-applications','users','活动报名审核',current)}</nav></aside><div class="portal-main"><div class="portal-head"><div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(description)}</p></div>${action}</div>${content}</div></div></section>`;
 }
 
 function adminSearchForm(value, placeholder) {
@@ -1467,6 +1488,31 @@ async function adminDashboardPage() {
   app.innerHTML=adminShell('管理概览','掌握赛事管理、队伍与活动报名审核及用户规模。',content,`<a class="button button-primary" href="#/admin/events/new">${icon('plus')}发布赛事</a>`);
 }
 
+function adminRuleCard(rule) {
+  return `<article class="admin-rule-card">
+    <a class="admin-rule-cover" href="${safeUrl(rule.viewUrl)}" target="_blank" rel="noopener noreferrer" aria-label="在线查看 ${escapeHtml(rule.title)}"><img src="${safeUrl(rule.coverUrl)}" alt="${escapeHtml(rule.title)} 当前 PDF 首页" width="850" height="1100"></a>
+    <div class="admin-rule-content">
+      <div class="admin-rule-heading"><div><span class="record-label">${escapeHtml(rule.program)}</span><h2>${escapeHtml(rule.title)}</h2></div>${rule.customized?'<span class="badge badge-approved">后台已更新</span>':'<span class="badge badge-ended">系统初始文件</span>'}</div>
+      <dl class="admin-rule-meta"><div><dt>当前文件名</dt><dd>${escapeHtml(rule.filename)}</dd></div><div><dt>文件大小</dt><dd>${escapeHtml(formatFileSize(rule.sizeBytes))}</dd></div><div><dt>更新时间</dt><dd>${formatDate(rule.updatedAt,true)}</dd></div></dl>
+      <form class="admin-rule-form" data-form="admin-rule-upload" data-key="${escapeHtml(rule.key)}" data-title="${escapeHtml(rule.title)}" novalidate>
+        <div class="form-field"><label for="rule-file-${escapeHtml(rule.key)}">选择新的规则 PDF</label><input class="form-control admin-rule-file" id="rule-file-${escapeHtml(rule.key)}" name="rule_file" type="file" accept="application/pdf,.pdf" data-rule-file required aria-describedby="rule-help-${escapeHtml(rule.key)}"><p class="helper" id="rule-help-${escapeHtml(rule.key)}">仅支持 PDF，最大 60MB。上传成功后将保留所选文件的原始文件名，并自动用第一页生成新封面。</p><p class="admin-rule-selected" data-rule-selected aria-live="polite">尚未选择文件</p></div>
+        <div class="admin-rule-actions"><a class="button button-secondary" href="${safeUrl(rule.viewUrl)}" target="_blank" rel="noopener noreferrer">${icon('eye',17)}查看当前文件</a><a class="button button-secondary" href="${safeUrl(rule.downloadUrl)}" download="${escapeHtml(rule.filename)}">${icon('download',17)}下载当前文件</a><button class="button button-primary" type="submit" disabled>${icon('upload',17)}上传并替换</button></div>
+      </form>
+    </div>
+  </article>`;
+}
+
+async function adminRulesPage() {
+  if (!requireAdmin()) return;
+  if (normalizedAdminLevel(state.user) !== 'super') {
+    app.innerHTML = adminShell('规则文件管理','该功能仅限最高管理员使用。',`<div class="danger-banner info-banner">${icon('lock')}<div><strong>当前账号不能替换赛事规则</strong><br>请由最高管理员登录后操作。</div></div>`);
+    return;
+  }
+  const { rules } = await apiFetch('/api/rules');
+  const content = `<div class="info-banner admin-rule-notice">${icon('info')}<div><strong>这里维护前台“赛事规则”页面的三个正式 PDF。</strong><br>替换成功后，在线查看、下载文件和规则封面会同时更新。上传期间请勿关闭页面。</div></div><div class="admin-rule-list">${rules.map(adminRuleCard).join('')}</div>`;
+  app.innerHTML = adminShell('规则文件管理','最高管理员可直接更新三个赛项的正式规则文件。',content,`<a class="button button-secondary" href="#/rules" target="_blank">${icon('eye',17)}查看前台规则页</a>`);
+}
+
 function adminEventActions(event) {
   return `<div class="cell-actions"><a class="button button-secondary button-small" href="#/events/${event.id}" target="_blank">${icon('eye',16)}前台</a><a class="button button-secondary button-small" href="/api/admin/events/${event.id}/export" download title="按参赛组别导出全部报名">${icon('download',16)}导出全部</a><a class="button button-secondary button-small" href="/api/admin/events/${event.id}/export?scope=approved" download title="按参赛组别导出审核通过赛队">${icon('download',16)}导出已通过</a><a class="button button-secondary button-small" href="/api/admin/events/${event.id}/export?scope=cancelled" download title="按参赛组别导出已驳回或已取消参赛赛队">${icon('download',16)}导出取消参赛</a><a class="button button-secondary button-small" href="#/admin/events/${event.id}/edit">${icon('edit',16)}编辑</a><button class="button button-danger-ghost button-small" type="button" data-action="delete-admin-event" data-id="${event.id}" data-label="${escapeHtml(event.title)}">${icon('trash',16)}删除赛事</button></div>`;
 }
@@ -1716,8 +1762,47 @@ function refundReviewModal(id,status) {
   openModal(rejected?'拒绝退费申请':'同意退费申请',`<form data-form="refund-review" data-id="${id}" novalidate><input type="hidden" name="status" value="${status}"><div class="${rejected?'danger-banner':'success-banner'} info-banner">${icon(rejected?'alert':'check')}<div>${rejected?'请向报名用户说明本次退费申请无法通过的原因。':'确认付款和报名信息后同意退费；实际退款仍需按组委会财务流程完成。'}</div></div><div class="gap-top">${field('note',rejected?'拒绝原因':'处理说明','',{type:'textarea',required:rejected,full:true,placeholder:rejected?'请填写拒绝退费的原因。':'可填写退款方式、预计到账时间等说明（选填）。'})}</div><div class="form-actions"><button class="button button-secondary" type="button" data-action="close-modal">取消</button><button class="button ${rejected?'button-danger':'button-accent'}" type="submit">${rejected?'确认拒绝':'确认同意'}</button></div></form>`,'','small');
 }
 
+function updateRuleUploadSelection(input) {
+  const form = input.closest('form[data-form="admin-rule-upload"]');
+  if (!form) return;
+  const file = input.files?.[0];
+  const status = $('[data-rule-selected]', form);
+  const submit = $('[type="submit"]', form);
+  const valid = Boolean(file && file.name.toLowerCase().endsWith('.pdf') && file.size > 0 && file.size <= 60 * 1024 * 1024);
+  if (status) status.textContent = file ? `${file.name} · ${formatFileSize(file.size)}` : '尚未选择文件';
+  if (submit) submit.disabled = !valid;
+  if (file && !valid) toast(file.size > 60 * 1024 * 1024 ? '规则 PDF 不能超过 60MB' : '请选择扩展名为 .pdf 的文件', 'error');
+}
+
+async function submitAdminRuleUpload(form) {
+  clearErrors(form);
+  const input = form.elements.rule_file;
+  const file = input?.files?.[0];
+  if (!file || !file.name.toLowerCase().endsWith('.pdf')) { toast('请先选择规则 PDF 文件', 'error'); input?.focus(); return; }
+  if (!file.size || file.size > 60 * 1024 * 1024) { toast('规则 PDF 必须在 60MB 以内', 'error'); input.focus(); return; }
+  const title = form.dataset.title || '该赛项';
+  const confirmed = await confirmAction('替换赛事规则 PDF', `确定将“${title}”的当前规则替换为“${file.name}”吗？成功后前台查看、下载和封面都会立即更新。`, '确认上传并替换');
+  if (!confirmed) return;
+  const button = form.querySelector('[type="submit"]');
+  setLoading(button, true, '正在上传并生成封面…');
+  try {
+    const result = await apiFetch(`/api/admin/rules/${encodeURIComponent(form.dataset.key)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/pdf', 'X-File-Name': encodeURIComponent(file.name) },
+      body: file,
+    });
+    toast(result.message);
+    await render();
+  } catch (error) {
+    toast(error.message, 'error', 9000);
+  } finally {
+    setLoading(button, false);
+  }
+}
+
 async function handleSubmit(event) {
   const form=event.target.closest('form[data-form]'); if(!form)return; event.preventDefault(); clearErrors(form);
+  if (form.dataset.form === 'admin-rule-upload') { await submitAdminRuleUpload(form); return; }
   const visualEditors=$$('[data-markdown-visual]',form);visualEditors.forEach(syncVisualMarkdown);
   const missingVisual=visualEditors.find((editor)=>editor.dataset.required==='true'&&!form.elements[editor.dataset.markdownName]?.value.trim());
   if(missingVisual){showErrors(form,{[missingVisual.dataset.markdownName]:'请填写通知正文'});return;}
@@ -1904,6 +1989,7 @@ document.addEventListener('submit',(event)=>{
 document.addEventListener('submit',handleSubmit);
 document.addEventListener('change',async(event)=>{
   const input=event.target;
+  if(input.matches('[data-rule-file]'))return updateRuleUploadSelection(input);
   if(input.matches('[data-markdown-image-input]'))return uploadMarkdownImage(input);
   if(input.matches('.upload-input'))return uploadFile(input);
   if(input.matches('[data-admin-review-group]')){
@@ -1979,7 +2065,7 @@ async function render() {
   try{
     if(path==='/home'||path==='/')homePage();
     else if(path==='/events')await eventsPage();
-    else if(path==='/rules')rulesPage();
+    else if(path==='/rules')await rulesPage();
     else if(path==='/about')aboutPage();
     else if(/^\/events\/\d+$/.test(path))await eventDetailPage(Number(path.split('/').pop()));
     else if(path==='/volunteer')state.activityAvailability.volunteer?await activityApplicationPage('volunteer'):activityUnavailablePage('volunteer');
@@ -2004,6 +2090,7 @@ async function render() {
     else if(path==='/account/registrations')await registrationsPage();
     else if(path==='/admin')await adminDashboardPage();
     else if(path==='/admin/events')await adminEventsPage();
+    else if(path==='/admin/rules')await adminRulesPage();
     else if(path==='/admin/users')await adminUsersPage();
     else if(/^\/admin\/users\/\d+$/.test(path))await adminUserDetailPage(Number(path.split('/')[3]));
     else if(path==='/admin/teams')await adminTeamsPage();

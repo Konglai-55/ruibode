@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
@@ -21,12 +21,15 @@ const expectedGroups = [
   'RECF-Inspire 创新大学组',
 ];
 const duplicateTeamNumberMessage = '该战队编号已被其他队伍注册（已被占用）\n\n如果您输入的确实是 RECF 官方分配给您的战队编号，但系统提示已被占用，请联系组委会协助核实处理：\n\n组委会邮箱：654849662@qq.com\n\n咨询电话：13761393714（小周老师）';
+const tinyPngBuffer = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
 
 async function setup() {
   const dir = await mkdtemp(join(tmpdir(), 'ruibude-registration-'));
   const { server, db } = await createApplication({
     dbPath: join(dir, 'test.db'),
     uploadDir: join(dir, 'uploads'),
+    ruleDir: join(dir, 'rules'),
+    ruleCoverRenderer: async (_pdfPath, coverPath) => writeFile(coverPath, tinyPngBuffer),
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address();
@@ -198,6 +201,55 @@ test('MP4 静态资源支持 Safari 所需的字节范围读取', async () => {
     assert.match(response.headers.get('content-range'), /^bytes 0-1023\/\d+$/);
     assert.equal(Number(response.headers.get('content-length')), 1024);
     assert.equal((await response.arrayBuffer()).byteLength, 1024);
+  } finally { await app.close(); }
+});
+
+test('仅最高管理员可替换规则 PDF，并保留文件名及同步第一页封面', async () => {
+  const app = await setup();
+  const admin = client(app.base);
+  const middle = client(app.base);
+  const pdf = Buffer.from('%PDF-1.4\n% managed rule\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF');
+  const filename = 'RECF Engage·飞跃巅峰·小初塑料·1.2正式版.pdf';
+  try {
+    const initial = await admin.request('/api/rules');
+    assert.equal(initial.response.status, 200);
+    assert.equal(initial.payload.rules.length, 3);
+    assert.equal(initial.payload.rules.find((item) => item.key === 'engage').customized, false);
+
+    app.db.prepare("UPDATE users SET role='admin',admin_level='mid' WHERE email='demo@ruibude.local'").run();
+    await middle.login('demo@ruibude.local', 'Demo123!');
+    const denied = await middle.request('/api/admin/rules/engage', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/pdf', 'X-File-Name': encodeURIComponent(filename) },
+      body: pdf,
+    });
+    assert.equal(denied.response.status, 403);
+    assert.match(denied.payload.error, /最高管理员/);
+
+    await admin.login('admin@ruibude.local', 'Admin123!');
+    const replaced = await admin.request('/api/admin/rules/engage', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/pdf', 'X-File-Name': encodeURIComponent(filename) },
+      body: pdf,
+    });
+    assert.equal(replaced.response.status, 200);
+    assert.equal(replaced.payload.rule.filename, filename);
+    assert.equal(replaced.payload.rule.customized, true);
+    assert.equal('pdfPath' in replaced.payload.rule, false, '接口不能泄露服务器文件路径');
+
+    const current = await admin.request('/api/rules');
+    const engage = current.payload.rules.find((item) => item.key === 'engage');
+    assert.equal(engage.filename, filename);
+    assert.equal(engage.sizeBytes, pdf.length);
+    const download = await fetch(`${app.base}${engage.downloadUrl}`);
+    assert.equal(download.status, 200);
+    assert.match(download.headers.get('content-disposition'), /attachment/);
+    assert.match(download.headers.get('content-disposition'), /filename\*=UTF-8''RECF%20Engage/);
+    assert.deepEqual(Buffer.from(await download.arrayBuffer()), pdf);
+    const cover = await fetch(`${app.base}${engage.coverUrl}`);
+    assert.equal(cover.status, 200);
+    assert.equal(cover.headers.get('content-type'), 'image/png');
+    assert.deepEqual(Buffer.from(await cover.arrayBuffer()), tinyPngBuffer);
   } finally { await app.close(); }
 });
 
