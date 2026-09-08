@@ -253,6 +253,38 @@ test('仅最高管理员可替换规则 PDF，并保留文件名及同步第一�
   } finally { await app.close(); }
 });
 
+test('规则 PDF 封面生成卡住时应超时返回并保留原文件', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ruibude-rule-timeout-'));
+  const { server, db } = await createApplication({
+    dbPath: join(dir, 'test.db'),
+    uploadDir: join(dir, 'uploads'),
+    ruleDir: join(dir, 'rules'),
+    ruleCoverRenderer: async () => new Promise(() => {}),
+    ruleCoverTimeoutMs: 25,
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const admin = client(`http://127.0.0.1:${server.address().port}`);
+  const pdf = Buffer.from('%PDF-1.4\n% timeout\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF');
+  try {
+    await admin.login('admin@ruibude.local', 'Admin123!');
+    const startedAt = Date.now();
+    const result = await admin.request('/api/admin/rules/engage', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/pdf', 'X-File-Name': encodeURIComponent('timeout.pdf') },
+      body: pdf,
+    });
+    assert.equal(result.response.status, 504);
+    assert.match(result.payload.error, /封面生成超时/);
+    assert.ok(Date.now() - startedAt < 1000);
+    const rules = await admin.request('/api/rules');
+    assert.equal(rules.payload.rules.find((item) => item.key === 'engage').customized, false);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    db.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('管理员赛事管理按未开始、开赛时间、名称与 ID 升序排列', async () => {
   const app = await setup();
   const admin = client(app.base);

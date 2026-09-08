@@ -21,6 +21,7 @@ const UPLOAD_DIR = join(DATA_DIR, 'uploads');
 const RULE_DIR = join(DATA_DIR, 'rules');
 const BODY_LIMIT = 30 * 1024 * 1024;
 const RULE_PDF_LIMIT = 60 * 1024 * 1024;
+const RULE_COVER_TIMEOUT_MS = 45 * 1000;
 const SESSION_DAYS = 14;
 const AUTH_VERIFICATION_TTL_MINUTES = 10;
 const AUTH_VERIFICATION_TTL_MS = AUTH_VERIFICATION_TTL_MINUTES * 60_000;
@@ -1549,16 +1550,44 @@ function renderRuleCover(pdfPath, coverPath) {
       '-f', '1', '-l', '1', '-singlefile', '-png', '-r', '100', pdfPath, outputPrefix,
     ], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
+    let settled = false;
+    const finish = (callback) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      callback();
+    };
+    const timer = setTimeout(() => {
+      if (settled) return;
+      child.kill();
+      finish(() => rejectRender(fail(504, 'PDF 首页封面生成超时，请确认文件未损坏后重试')));
+    }, RULE_COVER_TIMEOUT_MS);
     child.stderr.on('data', (chunk) => { stderr = `${stderr}${chunk}`.slice(-3000); });
-    child.once('error', () => rejectRender(fail(503, '服务器缺少 PDF 封面处理组件，请联系技术人员安装 Poppler 后重试')));
+    child.once('error', () => finish(() => rejectRender(fail(503, '服务器缺少 PDF 封面处理组件，请联系技术人员安装 Poppler 后重试'))));
     child.once('exit', (code) => {
-      if (code === 0) resolveRender();
-      else rejectRender(fail(422, `无法读取该 PDF 的第一页，请确认文件完整且未加密${stderr.trim() ? `：${stderr.trim()}` : ''}`));
+      finish(() => {
+        if (code === 0) resolveRender();
+        else rejectRender(fail(422, `无法读取该 PDF 的第一页，请确认文件完整且未加密${stderr.trim() ? `：${stderr.trim()}` : ''}`));
+      });
     });
   });
 }
 
-async function replaceRuleDocument({ ruleDir, key, filename, buffer, actor, coverRenderer = renderRuleCover }) {
+async function runRuleCoverRenderer(coverRenderer, pdfPath, coverPath, timeoutMs = RULE_COVER_TIMEOUT_MS) {
+  let timer;
+  try {
+    await Promise.race([
+      coverRenderer(pdfPath, coverPath),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(fail(504, 'PDF 首页封面生成超时，请确认文件未损坏后重试')), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function replaceRuleDocument({ ruleDir, key, filename, buffer, actor, coverRenderer = renderRuleCover, coverTimeoutMs = RULE_COVER_TIMEOUT_MS }) {
   const config = ruleDocumentConfig(key);
   if (!config) throw fail(404, '未找到该赛事规则');
   if (!buffer.length || buffer.length > RULE_PDF_LIMIT) throw fail(422, '规则 PDF 文件必须在 60MB 以内');
@@ -1570,7 +1599,7 @@ async function replaceRuleDocument({ ruleDir, key, filename, buffer, actor, cove
   let storedCover = '';
   try {
     await writeFile(temporaryPdf, buffer);
-    await coverRenderer(temporaryPdf, temporaryCover);
+    await runRuleCoverRenderer(coverRenderer, temporaryPdf, temporaryCover, coverTimeoutMs);
     const cover = await readFile(temporaryCover);
     if (!uploadHasExpectedSignature(cover, 'image/png')) throw fail(422, 'PDF 首页封面生成失败，请确认文件完整');
     const manifest = await readRuleManifest(ruleDir);
@@ -1655,7 +1684,7 @@ function matchRoute(pathname, pattern) {
   return Object.fromEntries(names.map((name, index) => [name, decodeURIComponent(match[index + 1])]));
 }
 
-async function api(req, res, url, appDb, uploadDir, ruleDir, ruleCoverRenderer) {
+async function api(req, res, url, appDb, uploadDir, ruleDir, ruleCoverRenderer, ruleCoverTimeoutMs) {
   const db = appDb.db;
   const path = url.pathname;
   const method = req.method;
@@ -2143,7 +2172,7 @@ async function api(req, res, url, appDb, uploadDir, ruleDir, ruleCoverRenderer) 
     const ip = req.socket.remoteAddress || 'local';
     if (!allowRate(`rule-upload-user:${actor.id}`, 12, 60 * 60_000) || !allowRate(`rule-upload-ip:${ip}`, 24, 60 * 60_000)) throw fail(429, '规则文件上传过于频繁，请稍后再试');
     const buffer = await bodyBuffer(req, RULE_PDF_LIMIT);
-    const document = await replaceRuleDocument({ ruleDir, key: params.key, filename, buffer, actor, coverRenderer: ruleCoverRenderer });
+    const document = await replaceRuleDocument({ ruleDir, key: params.key, filename, buffer, actor, coverRenderer: ruleCoverRenderer, coverTimeoutMs: ruleCoverTimeoutMs });
     return json(res, 200, { message: `${document.program} 规则 PDF 已替换，前台封面已同步更新`, rule: publicRuleDocument(document) });
   }
   if (method === 'GET' && path === '/api/admin/events') {
@@ -2489,6 +2518,7 @@ export async function createApplication({
   uploadDir = UPLOAD_DIR,
   ruleDir = process.env.RULE_DIR || RULE_DIR,
   ruleCoverRenderer = renderRuleCover,
+  ruleCoverTimeoutMs = RULE_COVER_TIMEOUT_MS,
 } = {}) {
   await mkdir(uploadDir, { recursive: true });
   await mkdir(ruleDir, { recursive: true });
@@ -2507,7 +2537,7 @@ export async function createApplication({
     if (process.env.NODE_ENV === 'production') res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     try {
-      if (url.pathname.startsWith('/api/')) await api(req, res, url, appDb, uploadDir, ruleDir, ruleCoverRenderer);
+      if (url.pathname.startsWith('/api/')) await api(req, res, url, appDb, uploadDir, ruleDir, ruleCoverRenderer, ruleCoverTimeoutMs);
       else await serveStatic(req, res, url, uploadDir, appDb);
     } catch (error) {
       if (res.headersSent) return res.end();
