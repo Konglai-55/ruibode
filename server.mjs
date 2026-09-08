@@ -1,7 +1,7 @@
 import http from 'node:http';
 import tls from 'node:tls';
 import { readFile, writeFile, mkdir, stat, unlink, copyFile, mkdtemp, rm } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { extname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
@@ -194,6 +194,16 @@ function cookie(name, value, options = {}) {
 async function bodyBuffer(req, maxBytes = BODY_LIMIT) {
   const declaredLength = Number(req.headers['content-length'] || 0);
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) throw fail(413, `提交内容过大，单次请求不得超过 ${Math.ceil(maxBytes / 1024 / 1024)}MB`);
+  if (Number.isSafeInteger(declaredLength) && declaredLength > 0) {
+    const buffer = Buffer.allocUnsafe(declaredLength);
+    let size = 0;
+    for await (const chunk of req) {
+      size += chunk.length;
+      if (size > maxBytes || size > declaredLength) throw fail(413, `提交内容过大，单次请求不得超过 ${Math.ceil(maxBytes / 1024 / 1024)}MB`);
+      chunk.copy(buffer, size - chunk.length);
+    }
+    return size === declaredLength ? buffer : buffer.subarray(0, size);
+  }
   let size = 0;
   const chunks = [];
   for await (const chunk of req) {
@@ -1643,12 +1653,55 @@ async function replaceRuleDocument({ ruleDir, key, filename, buffer, actor, cove
   }
 }
 
+function requestedByteRange(headerValue, size) {
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(String(headerValue || '').trim());
+  if (!match || (!match[1] && !match[2])) return null;
+  let start;
+  let end;
+  if (!match[1]) {
+    const suffixLength = Number(match[2]);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) return null;
+    start = Math.max(size - suffixLength, 0);
+    end = size - 1;
+  } else {
+    start = Number(match[1]);
+    end = match[2] ? Math.min(Number(match[2]), size - 1) : size - 1;
+  }
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start > end || start >= size) return null;
+  return { start, end };
+}
+
+function streamFileResponse(req, res, filePath, size, headers, allowRange = false) {
+  const rangeHeader = allowRange ? req.headers.range : '';
+  const range = rangeHeader ? requestedByteRange(rangeHeader, size) : null;
+  if (allowRange) headers['Accept-Ranges'] = 'bytes';
+  if (rangeHeader && !range) {
+    res.writeHead(416, { ...headers, 'Content-Range': `bytes */${size}`, 'Content-Length': '0' });
+    res.end();
+    return;
+  }
+  const start = range?.start ?? 0;
+  const end = range?.end ?? Math.max(size - 1, 0);
+  const contentLength = range ? end - start + 1 : size;
+  if (range) headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
+  headers['Content-Length'] = String(contentLength);
+  res.writeHead(range ? 206 : 200, headers);
+  if (req.method === 'HEAD' || size === 0) {
+    res.end();
+    return;
+  }
+  const stream = createReadStream(filePath, range ? { start, end } : undefined);
+  stream.once('error', () => { if (!res.destroyed) res.destroy(); });
+  res.once('close', () => stream.destroy());
+  stream.pipe(res);
+}
+
 async function serveRuleAsset(req, res, url, ruleDir, key, asset) {
   const config = ruleDocumentConfig(key);
   if (!config || !['file', 'cover'].includes(asset)) throw fail(404, '规则文件不存在');
   const document = await resolvedRuleDocument(ruleDir, config);
   const filePath = asset === 'cover' ? document.coverPath : document.pdfPath;
-  const data = await readFile(filePath);
+  const info = await stat(filePath);
   const headers = {
     'Content-Type': asset === 'cover' ? 'image/png' : 'application/pdf',
     'Cache-Control': 'public,max-age=3600',
@@ -1657,23 +1710,8 @@ async function serveRuleAsset(req, res, url, ruleDir, key, asset) {
   if (asset === 'file') {
     const disposition = url.searchParams.get('download') === '1' ? 'attachment' : 'inline';
     headers['Content-Disposition'] = `${disposition}; filename="rule.pdf"; filename*=UTF-8''${encodeURIComponent(document.filename)}`;
-    headers['Accept-Ranges'] = 'bytes';
   }
-  const range = asset === 'file' ? req.headers.range : '';
-  if (range) {
-    const match = /^bytes=(\d*)-(\d*)$/i.exec(range.trim());
-    const start = match?.[1] ? Number(match[1]) : 0;
-    const end = match?.[2] ? Math.min(Number(match[2]), data.length - 1) : data.length - 1;
-    if (!match || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= data.length) {
-      res.writeHead(416, { ...headers, 'Content-Range': `bytes */${data.length}` });
-      return res.end();
-    }
-    const chunk = data.subarray(start, end + 1);
-    res.writeHead(206, { ...headers, 'Content-Range': `bytes ${start}-${end}/${data.length}`, 'Content-Length': chunk.length });
-    return res.end(chunk);
-  }
-  res.writeHead(200, { ...headers, 'Content-Length': data.length });
-  res.end(data);
+  streamFileResponse(req, res, filePath, info.size, headers, asset === 'file');
 }
 
 function matchRoute(pathname, pattern) {
@@ -2465,7 +2503,6 @@ async function serveStatic(req, res, url, uploadDir = UPLOAD_DIR, appDb) {
   try {
     const info = await stat(filePath);
     if (!info.isFile()) throw new Error('not-file');
-    const data = await readFile(filePath);
     const headers = {
       'Content-Type': uploadRecord?.mime_type || MIME_TYPES[extname(filePath).toLowerCase()] || 'application/octet-stream',
       'Cache-Control': publicUpload || pathname.startsWith('/assets/') ? 'public,max-age=3600' : isUpload ? 'private,no-store' : 'no-cache',
@@ -2476,34 +2513,9 @@ async function serveStatic(req, res, url, uploadDir = UPLOAD_DIR, appDb) {
       headers['Cross-Origin-Resource-Policy'] = 'same-origin';
       res.removeHeader('X-Frame-Options');
     }
-    const range = req.headers.range;
     const isMedia = /^video\//.test(headers['Content-Type']) || /^audio\//.test(headers['Content-Type']);
-    if (isMedia) headers['Accept-Ranges'] = 'bytes';
-    if (isMedia && range) {
-      const match = /^bytes=(\d*)-(\d*)$/i.exec(range.trim());
-      if (!match) {
-        res.writeHead(416, { ...headers, 'Content-Range': `bytes */${data.length}` });
-        res.end();
-        return;
-      }
-      const start = match[1] ? Number(match[1]) : 0;
-      const end = match[2] ? Math.min(Number(match[2]), data.length - 1) : data.length - 1;
-      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || start >= data.length) {
-        res.writeHead(416, { ...headers, 'Content-Range': `bytes */${data.length}` });
-        res.end();
-        return;
-      }
-      const chunk = data.subarray(start, end + 1);
-      res.writeHead(206, {
-        ...headers,
-        'Content-Range': `bytes ${start}-${end}/${data.length}`,
-        'Content-Length': chunk.length,
-      });
-      res.end(chunk);
-      return;
-    }
-    res.writeHead(200, { ...headers, 'Content-Length': data.length });
-    res.end(data);
+    const isPdf = headers['Content-Type'] === 'application/pdf';
+    streamFileResponse(req, res, filePath, info.size, headers, isMedia || isPdf);
   } catch {
     if (!pathname.startsWith('/api/') && !pathname.includes('.')) {
       const data = await readFile(join(PUBLIC_DIR, 'index.html'));

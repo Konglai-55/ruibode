@@ -201,6 +201,13 @@ test('MP4 静态资源支持 Safari 所需的字节范围读取', async () => {
     assert.match(response.headers.get('content-range'), /^bytes 0-1023\/\d+$/);
     assert.equal(Number(response.headers.get('content-length')), 1024);
     assert.equal((await response.arrayBuffer()).byteLength, 1024);
+    const suffix = await fetch(`${app.base}/assets/home/recf-tarek-shraibati-congratulations.mp4`, {
+      headers: { Range: 'bytes=-128' },
+    });
+    assert.equal(suffix.status, 206);
+    assert.match(suffix.headers.get('content-range'), /^bytes \d+-\d+\/\d+$/);
+    assert.equal(Number(suffix.headers.get('content-length')), 128);
+    assert.equal((await suffix.arrayBuffer()).byteLength, 128);
   } finally { await app.close(); }
 });
 
