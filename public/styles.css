@@ -310,6 +310,7 @@ svg { flex: 0 0 auto; }
 .fact { padding: 12px 14px; border: 1px solid var(--border-light); border-radius: 2px; background: #fafafa; }
 .fact span { display: block; color: var(--muted-text); font-size: 13px; }
 .fact strong { display: block; margin-top: 3px; font-size: 15px; }
+.event-contact { white-space: pre-line; overflow-wrap: anywhere; word-break: break-word; }
 .registration-area { padding: 36px 0 56px; }
 .registration-panel { overflow: hidden; border: 1px solid var(--border-light); border-radius: 6px; background: #fff; }
 .registration-title { padding: 20px 22px; background: #f7f7f5; border-top: 3px solid var(--primary); border-bottom: 1px solid var(--border-light); }

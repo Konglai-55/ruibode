@@ -95,6 +95,7 @@ const fail = (status, message, fields) => Object.assign(new Error(message), { st
 const nowIso = () => new Date().toISOString();
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 const cleanText = (value, max = 500) => String(value ?? '').trim().slice(0, max);
+const cleanMultilineText = (value) => String(value ?? '').replace(/\r\n?/g, '\n').trim();
 const validEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 const validPhone = (phone) => !phone || /^[+\d\s()-]{6,24}$/.test(phone);
 const validUsername = (username) => /^[\p{L}\p{N}_-]{2,32}$/u.test(username);
@@ -156,8 +157,7 @@ const defaultNoticeMarkdown = (event = {}) => `# 关于举办 ${event.title || '
 
 ## 五、联系方式
 
-- **联系人：** ${event.contact_name || '小周老师'}
-- **电话：** ${event.contact_phone || '13761393714'}
+${(event.contact_info || [event.contact_name, event.contact_phone].filter(Boolean).join(' · ') || '请以赛事页面公布的联系方式为准').split(/\r?\n/).map((line) => `- ${line}`).join('\n')}
 `;
 const required = (body, names) => {
   const fields = {};
@@ -559,7 +559,7 @@ class AppDatabase {
       CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, published_at TEXT NOT NULL,
         image_url TEXT DEFAULT '', description TEXT NOT NULL, starts_at TEXT NOT NULL, ends_at TEXT NOT NULL,
-        contact_name TEXT NOT NULL, contact_phone TEXT NOT NULL, location TEXT NOT NULL,
+        contact_name TEXT NOT NULL, contact_phone TEXT NOT NULL, contact_info TEXT NOT NULL DEFAULT '', location TEXT NOT NULL,
         registration_start TEXT NOT NULL, registration_end TEXT NOT NULL,
         refund_deadline_days INTEGER NOT NULL DEFAULT 10 CHECK(refund_deadline_days BETWEEN 0 AND 365),
         groups_json TEXT NOT NULL,
@@ -673,6 +673,10 @@ class AppDatabase {
     }
     this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_unique ON users(username COLLATE NOCASE)');
     const eventColumns = this.db.prepare('PRAGMA table_info(events)').all().map((column) => column.name);
+    if (!eventColumns.includes('contact_info')) {
+      this.db.exec("ALTER TABLE events ADD COLUMN contact_info TEXT NOT NULL DEFAULT ''");
+      this.db.prepare("UPDATE events SET contact_info=TRIM(CASE WHEN TRIM(contact_name)<>'' AND TRIM(contact_phone)<>'' THEN contact_name || ' · ' || contact_phone WHEN TRIM(contact_name)<>'' THEN contact_name ELSE contact_phone END) WHERE TRIM(contact_info)=''").run();
+    }
     if (!eventColumns.includes('notice_markdown')) {
       this.db.exec("ALTER TABLE events ADD COLUMN notice_markdown TEXT NOT NULL DEFAULT ''");
       const legacyEvents = this.db.prepare('SELECT id,title,starts_at,ends_at,location,registration_start,registration_end,contact_name,contact_phone FROM events').all();
@@ -933,7 +937,9 @@ function replaceTeamLinks(db, teamId, table, column, ids) {
 }
 
 function validateEventPayload(body) {
-  required(body, ['title','description','starts_at','ends_at','contact_name','contact_phone','location','registration_start','registration_end','payee','account_no','bank_name']);
+  required(body, ['title','description','starts_at','ends_at','location','registration_start','registration_end','payee','account_no','bank_name']);
+  const contactInfo = cleanMultilineText(body.contact_info) || [cleanText(body.contact_name, 500), cleanText(body.contact_phone, 500)].filter(Boolean).join(' · ');
+  if (!contactInfo) throw fail(422, '请完善必填信息', { contact_info: '请填写联系方式' });
   const groups = [...new Set((body.groups || []).map((item) => cleanText(item, 80)).filter(Boolean))];
   if (!groups.length) throw fail(422, '至少设置一个参赛组别', { groups: '请添加参赛组别' });
   const start = new Date(body.starts_at).getTime();
@@ -944,7 +950,7 @@ function validateEventPayload(body) {
   if (start >= end) throw fail(422, '赛事结束时间必须晚于开始时间', { ends_at: '请调整结束时间' });
   if (regStart >= regEnd) throw fail(422, '报名结束时间必须晚于开始时间', { registration_end: '请调整报名结束时间' });
   if (regEnd > start) throw fail(422, '报名应在赛事开始前结束', { registration_end: '报名截止不得晚于赛事开始' });
-  return groups;
+  return { groups, contactInfo };
 }
 
 function validateRefundDeadlineDays(value) {
@@ -2224,15 +2230,17 @@ async function api(req, res, url, appDb, uploadDir, ruleDir, ruleCoverRenderer, 
     return json(res,200,{events});
   }
   if (method === 'POST' && path === '/api/admin/events') {
-    const user=auth(req,appDb,'admin'); const body=await bodyJson(req); const groups=validateEventPayload(body); const refundDeadlineDays=validateRefundDeadlineDays(body.refund_deadline_days); const ts=nowIso();
+    const user=auth(req,appDb,'admin'); const body=await bodyJson(req); const { groups, contactInfo }=validateEventPayload(body); const refundDeadlineDays=validateRefundDeadlineDays(body.refund_deadline_days); const ts=nowIso();
     const imageUrl=validateUploadRef(db,body.image_url,user,['event'],{allowEmpty:true,allowAssets:true,allowAdminAny:true});
     const noticeUrl=validateUploadRef(db,body.notice_url,user,['notice'],{allowEmpty:true,mimeTypes:['application/pdf'],allowAdminAny:true});
     const noticeMarkdown=validateNoticeMarkdownUploads(db,body.notice_markdown,user);
-    const result=db.prepare(`INSERT INTO events(title,published_at,image_url,description,starts_at,ends_at,contact_name,contact_phone,location,registration_start,registration_end,refund_deadline_days,groups_json,allow_volunteer,allow_spectator,payee,account_no,bank_code,bank_name,notice_url,notice_markdown,status,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(cleanText(body.title,200),body.published_at||ts,imageUrl,cleanText(body.description,3000),body.starts_at,body.ends_at,cleanText(body.contact_name,50),cleanText(body.contact_phone,30),cleanText(body.location,200),body.registration_start,body.registration_end,refundDeadlineDays,JSON.stringify(groups),booleanFlag(body.allow_volunteer)?1:0,booleanFlag(body.allow_spectator)?1:0,cleanText(body.payee,150),cleanText(body.account_no,80),cleanText(body.bank_code,80),cleanText(body.bank_name,150),noticeUrl,noticeMarkdown,body.status==='draft'?'draft':'published',user.id,ts,ts); return json(res,201,{message:'赛事已创建',id:Number(result.lastInsertRowid)});
+    const contactName = cleanText(body.contact_name || contactInfo.split('\n')[0], 50);
+    const contactPhone = cleanText(body.contact_phone, 30);
+    const result=db.prepare(`INSERT INTO events(title,published_at,image_url,description,starts_at,ends_at,contact_name,contact_phone,contact_info,location,registration_start,registration_end,refund_deadline_days,groups_json,allow_volunteer,allow_spectator,payee,account_no,bank_code,bank_name,notice_url,notice_markdown,status,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(cleanText(body.title,200),body.published_at||ts,imageUrl,cleanText(body.description,3000),body.starts_at,body.ends_at,contactName,contactPhone,contactInfo,cleanText(body.location,200),body.registration_start,body.registration_end,refundDeadlineDays,JSON.stringify(groups),booleanFlag(body.allow_volunteer)?1:0,booleanFlag(body.allow_spectator)?1:0,cleanText(body.payee,150),cleanText(body.account_no,80),cleanText(body.bank_code,80),cleanText(body.bank_name,150),noticeUrl,noticeMarkdown,body.status==='draft'?'draft':'published',user.id,ts,ts); return json(res,201,{message:'赛事已创建',id:Number(result.lastInsertRowid)});
   }
-  if ((params=matchRoute(path,'/api/admin/events/:id')) && method==='PUT') { const user=auth(req,appDb,'admin'); const body=await bodyJson(req); const id=Number(params.id); if(!db.prepare('SELECT 1 FROM events WHERE id=?').get(id)) throw fail(404,'未找到赛事'); const groups=validateEventPayload(body); const refundDeadlineDays=validateRefundDeadlineDays(body.refund_deadline_days); const imageUrl=validateUploadRef(db,body.image_url,user,['event'],{allowEmpty:true,allowAssets:true,allowAdminAny:true}); const noticeUrl=validateUploadRef(db,body.notice_url,user,['notice'],{allowEmpty:true,mimeTypes:['application/pdf'],allowAdminAny:true}); const noticeMarkdown=validateNoticeMarkdownUploads(db,body.notice_markdown,user); db.prepare(`UPDATE events SET title=?,published_at=?,image_url=?,description=?,starts_at=?,ends_at=?,contact_name=?,contact_phone=?,location=?,registration_start=?,registration_end=?,refund_deadline_days=?,groups_json=?,allow_volunteer=?,allow_spectator=?,payee=?,account_no=?,bank_code=?,bank_name=?,notice_url=?,notice_markdown=?,status=?,updated_at=? WHERE id=?`)
-    .run(cleanText(body.title,200),body.published_at||nowIso(),imageUrl,cleanText(body.description,3000),body.starts_at,body.ends_at,cleanText(body.contact_name,50),cleanText(body.contact_phone,30),cleanText(body.location,200),body.registration_start,body.registration_end,refundDeadlineDays,JSON.stringify(groups),booleanFlag(body.allow_volunteer)?1:0,booleanFlag(body.allow_spectator)?1:0,cleanText(body.payee,150),cleanText(body.account_no,80),cleanText(body.bank_code,80),cleanText(body.bank_name,150),noticeUrl,noticeMarkdown,body.status==='draft'?'draft':'published',nowIso(),id); return json(res,200,{message:'赛事已更新'}); }
+  if ((params=matchRoute(path,'/api/admin/events/:id')) && method==='PUT') { const user=auth(req,appDb,'admin'); const body=await bodyJson(req); const id=Number(params.id); const existing=db.prepare('SELECT * FROM events WHERE id=?').get(id); if(!existing) throw fail(404,'未找到赛事'); const { groups, contactInfo }=validateEventPayload(body); const refundDeadlineDays=validateRefundDeadlineDays(body.refund_deadline_days); const imageUrl=validateUploadRef(db,body.image_url,user,['event'],{allowEmpty:true,allowAssets:true,allowAdminAny:true}); const noticeUrl=validateUploadRef(db,body.notice_url,user,['notice'],{allowEmpty:true,mimeTypes:['application/pdf'],allowAdminAny:true}); const noticeMarkdown=validateNoticeMarkdownUploads(db,body.notice_markdown,user); const contactName=cleanText(body.contact_name || existing.contact_name || contactInfo.split('\n')[0],50); const contactPhone=cleanText(body.contact_phone || existing.contact_phone,30); db.prepare(`UPDATE events SET title=?,published_at=?,image_url=?,description=?,starts_at=?,ends_at=?,contact_name=?,contact_phone=?,contact_info=?,location=?,registration_start=?,registration_end=?,refund_deadline_days=?,groups_json=?,allow_volunteer=?,allow_spectator=?,payee=?,account_no=?,bank_code=?,bank_name=?,notice_url=?,notice_markdown=?,status=?,updated_at=? WHERE id=?`)
+    .run(cleanText(body.title,200),body.published_at||nowIso(),imageUrl,cleanText(body.description,3000),body.starts_at,body.ends_at,contactName,contactPhone,contactInfo,cleanText(body.location,200),body.registration_start,body.registration_end,refundDeadlineDays,JSON.stringify(groups),booleanFlag(body.allow_volunteer)?1:0,booleanFlag(body.allow_spectator)?1:0,cleanText(body.payee,150),cleanText(body.account_no,80),cleanText(body.bank_code,80),cleanText(body.bank_name,150),noticeUrl,noticeMarkdown,body.status==='draft'?'draft':'published',nowIso(),id); return json(res,200,{message:'赛事已更新'}); }
   if ((params=matchRoute(path,'/api/admin/events/:id/export')) && method==='GET') {
     auth(req,appDb,'admin');const event=hydrateEvent(db.prepare('SELECT * FROM events WHERE id=?').get(Number(params.id)));if(!event)throw fail(404,'未找到赛事');
     const scope=registrationExportScope(url.searchParams.get('scope'));

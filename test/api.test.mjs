@@ -306,6 +306,7 @@ test('管理员赛事管理按未开始、开赛时间、名称与 ID 升序排�
       registration_start: '2098-01-01T09:00:00+08:00',
       registration_end: '2098-12-31T18:00:00+08:00',
       refund_deadline_days: 15,
+      contact_info: '张老师：13800000000\n邮箱：contact@example.com',
       status: 'published',
     };
     const created = [];
@@ -335,6 +336,11 @@ test('管理员赛事管理按未开始、开赛时间、名称与 ID 升序排�
     assert.equal(createdEvent.refund_deadline_days, 15);
     assert.equal(createdEvent.refund_deadline_label, '2098年12月16日 24:00');
     assert.ok(createdEvent.groups.includes('RECF-Achieve 成年组'), '管理员应可新增未来赛季参赛组别');
+    assert.equal(createdEvent.contact_info, future.contact_info, '赛事联系方式应完整保留换行内容');
+    const updated = await admin.request(`/api/admin/events/${createdEvent.id}`, { method: 'PUT', body: JSON.stringify({ ...createdEvent, contact_info: '组委会：021-12345678\n邮箱：info@example.com\n微信：RECF-China' }) });
+    assert.equal(updated.response.status, 200);
+    const reloaded = (await admin.request('/api/admin/events')).payload.events.find((event) => event.id === createdEvent.id);
+    assert.equal(reloaded.contact_info, '组委会：021-12345678\n邮箱：info@example.com\n微信：RECF-China');
   } finally { await app.close(); }
 });
 
