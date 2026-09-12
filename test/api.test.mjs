@@ -876,23 +876,26 @@ test('用户可在报名截止前取消比赛并申请退费，管理员可处�
     const { payload: teams } = await demo.request('/api/teams');
     const { payload: events } = await demo.request('/api/events');
     const team = teams.teams[0];
-    const event = events.events.find((item) => item.registration_open && item.groups.includes(team.group_name));
+    let event = events.events.find((item) => item.registration_open && item.groups.includes(team.group_name));
     assert.ok(event, '测试数据应存在报名中的赛事');
+    // Keep this flow independent from the calendar date used to run the suite.
+    app.db.prepare("UPDATE events SET registration_start='2020-01-01T09:00:00+08:00', registration_end='2098-12-31T18:00:00+08:00', starts_at='2099-01-01T09:00:00+08:00', ends_at='2099-01-02T18:00:00+08:00' WHERE id=?").run(event.id);
+    event = (await demo.request('/api/events')).payload.events.find((item) => item.id === event.id);
     assert.equal(event.refund_deadline_days, 10);
-    assert.equal(event.refund_deadline_label, '2026年09月10日 24:00');
+    assert.equal(event.refund_deadline_label, '2098年12月21日 24:00');
     const tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
     const proof = await demo.request('/api/uploads', { method: 'POST', body: JSON.stringify({ kind: 'payment', dataUrl: tinyPng }) });
     const created = await demo.request('/api/registrations', { method: 'POST', body: JSON.stringify({ event_id: event.id, team_id: team.id, group_name: team.group_name, payment_proof_url: proof.payload.url }) });
     assert.equal(created.response.status, 201);
 
-    app.db.prepare('UPDATE events SET refund_deadline_days=365 WHERE id=?').run(event.id);
+    app.db.prepare("UPDATE events SET refund_deadline_days=365, registration_end='2025-01-01T00:00:00+08:00' WHERE id=?").run(event.id);
     let mine = await demo.request('/api/registrations');
     let registration = mine.payload.registrations.find((item) => item.id === created.payload.id);
     assert.equal(registration.can_request_refund, false);
     const lateRefund = await demo.request(`/api/registrations/${created.payload.id}/refund`, { method: 'POST', body: JSON.stringify({ reason: '超过赛事设置的退费申请截止日期' }) });
     assert.equal(lateRefund.response.status, 409);
     assert.match(lateRefund.payload.error, /已超过截止提交退费申请日期/);
-    app.db.prepare('UPDATE events SET refund_deadline_days=10 WHERE id=?').run(event.id);
+    app.db.prepare('UPDATE events SET refund_deadline_days=10, registration_end=? WHERE id=?').run(event.registration_end, event.id);
 
     const requested = await demo.request(`/api/registrations/${created.payload.id}/refund`, { method: 'POST', body: JSON.stringify({ reason: '行程调整，申请原路退回参赛费' }) });
     assert.equal(requested.response.status, 200);
